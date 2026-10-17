@@ -108,9 +108,9 @@ func Serve(store *storage.Storage, pool *worker.Pool) http.Handler {
 	mux.HandleFunc("PUT /entry/scroll/{entryID}", handler.scrollEntry)
 	mux.HandleFunc("GET /entry/create", handler.showAddEntryPage)
 	mux.HandleFunc("POST /entry/create", handler.submitEntry)
-	mux.HandleFunc("GET /entry/{entryID}/edit", handler.showEditEntryPage)
-	mux.HandleFunc("POST /entry/{entryID}/update", handler.updateEntry)
-	mux.HandleFunc("POST /entry/{entryID}/remove", handler.removeEntry)
+	mux.HandleFunc("GET /entry/edit/{entryID}", handler.showEditEntryPage)
+	mux.HandleFunc("POST /entry/update/{entryID}", handler.updateEntry)
+	mux.HandleFunc("POST /entry/remove/{entryID}", handler.removeEntry)
 
 	// Media proxy.
 	mux.HandleFunc("GET /proxy/{encodedDigest}/{encodedURL}", handler.mediaProxy)

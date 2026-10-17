@@ -128,7 +128,7 @@
                 <li>
                     <a
                         title="{{ t "entry.edit.title" }}"
-                        href="{{ routePath "/entry/%d/edit" .entry.ID }}"
+                        href="{{ routePath "/entry/edit/%d" .entry.ID }}"
                         >{{ icon "edit" }}<span class="icon-label">{{ t "entry.edit.label" }}</span></a>
                 </li>
                 {{ if .entry.CommentsURL }}
