@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -23,39 +22,55 @@ import (
 	"miniflux.app/v2/internal/reader/sanitizer"
 )
 
-// EstimateReadingTime returns the estimated reading time of an article in minute.
+// textReadingTime returns the estimated reading time of a text in minutes.
 func textReadingTime(content string, defaultReadingSpeed, cjkReadingSpeed int) int {
-	sanitizedContent := sanitizer.StripTags(content)
-	truncationPoint := min(len(sanitizedContent), 50)
+	const truncationPoint = 100
 
-	if isCJK(sanitizedContent[:truncationPoint]) {
-		return int(math.Ceil(float64(utf8.RuneCountInString(sanitizedContent)) / float64(cjkReadingSpeed)))
+	sanitizedContent := sanitizer.StripTags(content)
+
+	if isCJK(sanitizedContent, truncationPoint) {
+		return (utf8.RuneCountInString(sanitizedContent) + cjkReadingSpeed - 1) / cjkReadingSpeed
 	}
-	return int(math.Ceil(float64(len(strings.Fields(sanitizedContent))) / float64(defaultReadingSpeed)))
+
+	return (countWords(sanitizedContent) + defaultReadingSpeed - 1) / defaultReadingSpeed
 }
 
-func isCJK(text string) bool {
-	totalCJK := 0
+func countWords(s string) int {
+	n := 0
+	for range strings.FieldsSeq(s) {
+		n++
+	}
+	return n
+}
 
-	for _, r := range text[:min(len(text), 50)] {
-		if unicode.Is(unicode.Han, r) ||
-			unicode.Is(unicode.Hangul, r) ||
-			unicode.Is(unicode.Hiragana, r) ||
-			unicode.Is(unicode.Katakana, r) ||
-			unicode.Is(unicode.Yi, r) ||
-			unicode.Is(unicode.Bopomofo, r) {
+func isCJK(text string, limit int) bool {
+	var letters, totalCJK int
+	for _, r := range text {
+		// Numbers and control characters often used in CJK too.
+		// Counting them makes detection less reliable.
+		if !unicode.In(r, unicode.Letter) {
+			continue
+		}
+
+		if letters++; letters == limit {
+			break
+		}
+
+		if unicode.In(r, unicode.Han, unicode.Hangul, unicode.Hiragana, unicode.Katakana, unicode.Yi, unicode.Bopomofo) {
 			totalCJK++
 		}
 	}
 
-	// if at least 50% of the text is CJK, odds are that the text is in CJK.
-	return totalCJK > len(text)/50
+	// If at least half of the letters is CJK, odds are that the text is CJK.
+	midpoint := letters / 2
+
+	return totalCJK > midpoint
 }
 
 func fetchWatchTime(websiteURL, query string, isoDate bool) (int, error) {
-	requestBuilder := fetcher.NewRequestBuilder()
-	requestBuilder.WithTimeout(config.Opts.HTTPClientTimeout())
-	requestBuilder.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
+	requestBuilder := fetcher.NewRequestBuilder().
+		WithTimeout(config.Opts.HTTPClientTimeout()).
+		WithProxyRotator(proxyrotator.ProxyRotatorInstance)
 
 	responseHandler := fetcher.NewResponseHandler(requestBuilder.ExecuteRequest(websiteURL))
 	defer responseHandler.Close()
@@ -83,16 +98,18 @@ func fetchWatchTime(websiteURL, query string, isoDate bool) (int, error) {
 		}
 		ret = int(parsedDuration.Minutes())
 	} else {
-		parsedDuration, err := strconv.ParseInt(duration, 10, 64)
+		parsedDuration, err := strconv.Atoi(duration)
 		if err != nil {
 			return 0, fmt.Errorf("unable to parse duration %s: %v", duration, err)
 		}
-		ret = int(parsedDuration / 60)
+		ret = parsedDuration / 60
 	}
 	return ret, nil
 }
 
-// EstimateReadingTime updates the reading time of an entry based on its content.
+// EstimateReadingTime returns the reading time of an entry in minutes.
+// For video entries, the watch time is fetched from the platform unless the
+// entry already has a reading time. Otherwise, it is estimated from the content.
 func EstimateReadingTime(entry *model.Entry, user *model.User) int {
 	if !user.ShowReadingTime {
 		slog.Debug("Skip reading time estimation for this user", slog.Int64("user_id", user.ID))
@@ -111,33 +128,31 @@ func EstimateReadingTime(entry *model.Entry, user *model.User) int {
 		{shouldFetchBilibiliWatchTime, fetchBilibiliWatchTime, "Bilibili"},
 	}
 
-	readingTime := 0
-
 	// Iterate through scenarios and attempt to fetch watch time
 	for _, scenario := range watchTimeScenarios {
 		if scenario.shouldFetch(entry) {
-			if entry.ID == 0 || entry.ReadingTime == 0 {
-				if watchTime, err := scenario.fetchFunc(entry.URL); err != nil {
-					slog.Warn("Unable to fetch watch time",
-						slog.String("platform", scenario.platform),
-						slog.Int64("user_id", user.ID),
-						slog.Int64("entry_id", entry.ID),
-						slog.String("entry_url", entry.URL),
-						slog.Any("error", err),
-					)
-				} else {
-					readingTime = watchTime
-				}
+			if entry.ReadingTime > 0 {
+				return entry.ReadingTime
+			}
+
+			watchTime, err := scenario.fetchFunc(entry.URL)
+			if err != nil {
+				slog.Warn("Unable to fetch watch time",
+					slog.String("platform", scenario.platform),
+					slog.Int64("user_id", user.ID),
+					slog.Int64("entry_id", entry.ID),
+					slog.String("entry_url", entry.URL),
+					slog.Any("error", err),
+				)
+			} else if watchTime > 0 {
+				return watchTime
 			}
 			break
 		}
 	}
 
 	// Fallback to text-based reading time estimation
-	if readingTime == 0 {
-		return textReadingTime(entry.Content, user.DefaultReadingSpeed, user.CJKReadingSpeed)
-	}
-	return readingTime
+	return textReadingTime(entry.Content, user.DefaultReadingSpeed, user.CJKReadingSpeed)
 }
 
 // parseISO8601Duration parses a subset of ISO8601 durations, mainly for youtube video.
@@ -148,39 +163,32 @@ func parseISO8601Duration(duration string) (time.Duration, error) {
 	}
 
 	var d time.Duration
-	num := ""
+	start := 0
 
-	for _, char := range after {
-		var val float64
-		var err error
+	for i := 0; i < len(after); i++ {
+		var unit time.Duration
 
-		switch char {
+		switch after[i] {
 		case 'Y', 'W', 'D':
-			return 0, fmt.Errorf("the '%c' specifier isn't supported", char)
+			return 0, fmt.Errorf("the '%c' specifier isn't supported", after[i])
 		case 'H':
-			if val, err = strconv.ParseFloat(num, 64); err != nil {
-				return 0, err
-			}
-			d += time.Duration(val) * time.Hour
-			num = ""
+			unit = time.Hour
 		case 'M':
-			if val, err = strconv.ParseFloat(num, 64); err != nil {
-				return 0, err
-			}
-			d += time.Duration(val) * time.Minute
-			num = ""
+			unit = time.Minute
 		case 'S':
-			if val, err = strconv.ParseFloat(num, 64); err != nil {
-				return 0, err
-			}
-			d += time.Duration(val) * time.Second
-			num = ""
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
-			num += string(char)
+			unit = time.Second
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			continue
 		default:
 			return 0, errors.New("invalid character in the period")
 		}
+
+		val, err := strconv.Atoi(after[start:i])
+		if err != nil {
+			return 0, err
+		}
+		d += time.Duration(val) * unit
+		start = i + 1
 	}
 	return d, nil
 }

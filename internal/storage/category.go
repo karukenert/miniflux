@@ -30,11 +30,16 @@ func (s *Storage) CategoryTitleExists(userID int64, title string) bool {
 }
 
 // CategoryIDExists checks if the given category exists into the database.
-func (s *Storage) CategoryIDExists(userID, categoryID int64) bool {
+// The returned error is non-nil only for a genuine query/connection failure;
+// a category that doesn't exist is reported as (false, nil), matching the
+// underlying sql.ErrNoRows case.
+func (s *Storage) CategoryIDExists(userID, categoryID int64) (bool, error) {
 	var result bool
 	query := `SELECT true FROM categories WHERE user_id=$1 AND id=$2 LIMIT 1`
-	s.db.QueryRow(query, userID, categoryID).Scan(&result)
-	return result
+	if err := s.db.QueryRow(query, userID, categoryID).Scan(&result); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf(`store: unable to check if category exists: %w`, err)
+	}
+	return result, nil
 }
 
 // Category returns a category from the database.
@@ -49,7 +54,7 @@ func (s *Storage) Category(userID, categoryID int64) (*model.Category, error) {
 	err := s.db.QueryRow(query, userID, categoryID).Scan(&category.ID, &category.UserID, &category.Title, &category.HideGlobally)
 
 	switch {
-	case err == sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf(`store: unable to fetch category: %v`, err)
@@ -66,7 +71,7 @@ func (s *Storage) CategoryByTitle(userID int64, title string) (*model.Category, 
 	err := s.db.QueryRow(query, userID, title).Scan(&category.ID, &category.UserID, &category.Title, &category.HideGlobally)
 
 	switch {
-	case err == sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf(`store: unable to fetch category: %v`, err)
@@ -97,30 +102,35 @@ func (s *Storage) Categories(userID int64) (model.Categories, error) {
 	return categories, nil
 }
 
-// CategoriesWithFeedCount returns all categories with the number of feeds.
-func (s *Storage) CategoriesWithFeedCount(userID int64) (model.Categories, error) {
-	user, err := s.UserByID(userID)
-	if err != nil {
-		return nil, err
-	}
-
+// CategoriesWithFeedCount returns all categories with the number of feeds, sorted according to sortOrder.
+func (s *Storage) CategoriesWithFeedCount(userID int64, sortOrder string) (model.Categories, error) {
 	query := `
 		SELECT
 			c.id,
 			c.user_id,
 			c.title,
 			c.hide_globally,
-			(SELECT count(*) FROM feeds WHERE feeds.category_id=c.id) AS count,
-			(SELECT count(*)
-			   FROM feeds
-			     JOIN entries ON (feeds.id = entries.feed_id)
-			   WHERE feeds.category_id = c.id AND entries.status = $1) AS count_unread
+			coalesce(fc.feed_count, 0),
+			coalesce(uc.unread_count, 0)
 		FROM categories c
+		LEFT JOIN (
+			SELECT category_id, count(*) AS feed_count
+			FROM feeds
+			WHERE user_id = $2
+			GROUP BY category_id
+		) fc ON fc.category_id = c.id
+		LEFT JOIN (
+			SELECT f.category_id, count(*) AS unread_count
+			FROM entries e
+			INNER JOIN feeds f ON f.id = e.feed_id
+			WHERE e.user_id = $2 AND e.status = $1
+			GROUP BY f.category_id
+		) uc ON uc.category_id = c.id
 		WHERE
-			user_id=$2
+			c.user_id=$2
 	`
 
-	if user.CategoriesSortingOrder == "alphabetical" {
+	if sortOrder == "alphabetical" {
 		query += `
 			ORDER BY
 				c.title ASC
@@ -128,7 +138,7 @@ func (s *Storage) CategoriesWithFeedCount(userID int64) (model.Categories, error
 	} else {
 		query += `
 			ORDER BY
-				count_unread DESC,
+				coalesce(uc.unread_count, 0) DESC,
 				c.title ASC
 		`
 	}
@@ -255,8 +265,9 @@ func (s *Storage) RemoveCategory(userID, categoryID int64) error {
 	return nil
 }
 
-// RemoveAndReplaceCategoriesByName deletes the given categories, replacing those categories with the user's first
-// category on affected feeds.
+// RemoveAndReplaceCategoriesByName deletes categories with the given titles and
+// reassigns affected feeds to the user's first remaining category. It returns
+// an error if the deletion would leave the user without any categories.
 func (s *Storage) RemoveAndReplaceCategoriesByName(userid int64, titles []string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -265,7 +276,7 @@ func (s *Storage) RemoveAndReplaceCategoriesByName(userid int64, titles []string
 
 	titleParam := pq.Array(titles)
 	var count int
-	query := "SELECT count(*) FROM categories WHERE user_id = $1 and title != ANY($2)"
+	query := "SELECT count(*) FROM categories WHERE user_id = $1 AND title <> ALL($2)"
 	err = tx.QueryRow(query, userid, titleParam).Scan(&count)
 	if err != nil {
 		tx.Rollback()

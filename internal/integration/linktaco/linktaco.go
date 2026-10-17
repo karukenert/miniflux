@@ -6,11 +6,14 @@ package linktaco // import "miniflux.app/v2/internal/integration/linktaco"
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"miniflux.app/v2/internal/config"
+	"miniflux.app/v2/internal/http/client"
 	"miniflux.app/v2/internal/version"
 )
 
@@ -44,7 +47,7 @@ func NewClient(apiToken, orgSlug, tags, visibility string) *Client {
 
 func (c *Client) CreateBookmark(entryURL, entryTitle, entryContent string) error {
 	if c.apiToken == "" || c.orgSlug == "" {
-		return fmt.Errorf("linktaco: missing API token or organization slug")
+		return errors.New("linktaco: missing API token or organization slug")
 	}
 
 	description := entryContent
@@ -103,7 +106,7 @@ func (c *Client) CreateBookmark(entryURL, entryTitle, entryContent string) error
 	request.Header.Set("User-Agent", "Miniflux/"+version.Version)
 	request.Header.Set("Authorization", "Bearer "+c.apiToken)
 
-	httpClient := &http.Client{Timeout: defaultClientTimeout}
+	httpClient := client.NewClientWithOptions(client.Options{Timeout: defaultClientTimeout, BlockPrivateNetworks: !config.Opts.IntegrationAllowPrivateNetworks()})
 	response, err := httpClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("linktaco: unable to send request: %v", err)

@@ -5,6 +5,7 @@ package storage // import "miniflux.app/v2/internal/storage"
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,8 +14,8 @@ import (
 	"github.com/lib/pq"
 )
 
-// GetEnclosures returns all attachments for the given entry.
-func (s *Storage) GetEnclosures(entryID int64) (model.EnclosureList, error) {
+// EnclosuresByEntryID returns all enclosures for the given entry.
+func (s *Storage) EnclosuresByEntryID(entryID int64) (model.EnclosureList, error) {
 	query := `
 		SELECT
 			id,
@@ -60,7 +61,8 @@ func (s *Storage) GetEnclosures(entryID int64) (model.EnclosureList, error) {
 	return enclosures, nil
 }
 
-func (s *Storage) GetEnclosuresForEntries(entryIDs []int64) (map[int64]model.EnclosureList, error) {
+// EnclosuresByEntryIDs returns enclosures for the given entries, grouped by entry ID.
+func (s *Storage) EnclosuresByEntryIDs(entryIDs []int64) (map[int64]model.EnclosureList, error) {
 	query := `
 		SELECT
 			id,
@@ -105,7 +107,8 @@ func (s *Storage) GetEnclosuresForEntries(entryIDs []int64) (map[int64]model.Enc
 	return enclosuresMap, nil
 }
 
-func (s *Storage) GetEnclosure(enclosureID int64) (*model.Enclosure, error) {
+// EnclosureByID returns the enclosure for the given user and enclosure ID.
+func (s *Storage) EnclosureByID(userID, enclosureID int64) (*model.Enclosure, error) {
 	query := `
 		SELECT
 			id,
@@ -118,11 +121,10 @@ func (s *Storage) GetEnclosure(enclosureID int64) (*model.Enclosure, error) {
 		FROM
 			enclosures
 		WHERE
-			id = $1
-		ORDER BY id ASC
+			id = $1 AND user_id = $2
 	`
 
-	row := s.db.QueryRow(query, enclosureID)
+	row := s.db.QueryRow(query, enclosureID, userID)
 
 	var enclosure model.Enclosure
 	err := row.Scan(
@@ -135,7 +137,7 @@ func (s *Storage) GetEnclosure(enclosureID int64) (*model.Enclosure, error) {
 		&enclosure.MediaProgression,
 	)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	} else if err != nil {
 		return nil, fmt.Errorf(`store: unable to fetch enclosure row: %v`, err)
@@ -155,7 +157,7 @@ func (s *Storage) createEnclosure(tx *sql.Tx, enclosure *model.Enclosure) error 
 			(url, size, mime_type, entry_id, user_id, media_progression)
 		VALUES
 			($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (user_id, entry_id, md5(url)) DO NOTHING
+		ON CONFLICT (user_id, entry_id, sha256(url::bytea)) DO NOTHING
 		RETURNING
 			id
 	`
@@ -176,6 +178,18 @@ func (s *Storage) createEnclosure(tx *sql.Tx, enclosure *model.Enclosure) error 
 
 func (s *Storage) updateEnclosures(tx *sql.Tx, entry *model.Entry) error {
 	if len(entry.Enclosures) == 0 {
+		// Do not keep any old enclosures if there is none in the updated entry.
+		query := `
+			DELETE FROM
+				enclosures
+			WHERE
+				user_id=$1 AND entry_id=$2
+		`
+
+		_, err := tx.Exec(query, entry.UserID, entry.ID)
+		if err != nil {
+			return fmt.Errorf(`store: unable to delete old enclosures: %v`, err)
+		}
 		return nil
 	}
 
@@ -203,6 +217,7 @@ func (s *Storage) updateEnclosures(tx *sql.Tx, entry *model.Entry) error {
 	return nil
 }
 
+// UpdateEnclosure persists changes to the given enclosure.
 func (s *Storage) UpdateEnclosure(enclosure *model.Enclosure) error {
 	query := `
 		UPDATE

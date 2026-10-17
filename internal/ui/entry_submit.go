@@ -10,40 +10,37 @@ import (
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/crypto"
 	"miniflux.app/v2/internal/http/request"
-	"miniflux.app/v2/internal/http/response/html"
-	"miniflux.app/v2/internal/http/route"
+	"miniflux.app/v2/internal/http/response"
 	"miniflux.app/v2/internal/locale"
 	"miniflux.app/v2/internal/model"
 	"miniflux.app/v2/internal/reader/processor"
-	"miniflux.app/v2/internal/storage"
 	"miniflux.app/v2/internal/ui/form"
-	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
 
 func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 	user, err := h.store.UserByID(request.UserID(r))
 	if err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
-	printer := locale.NewPrinter(request.UserLanguage(r))
+	printer := locale.NewPrinter(user.Language)
 
-	queryBuilder := storage.NewFeedQueryBuilder(h.store, user.ID)
+	queryBuilder := h.store.NewFeedQueryBuilder(user.ID)
 	queryBuilder.WithManual(true)
 	feeds, err := queryBuilder.GetFeeds()
 	if err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
 
-	sess := session.New(h.store, request.SessionID(r))
-	v := view.New(h.tpl, r, sess)
+	v := view.New(h.tpl, r)
 	v.Set("feeds", feeds)
 	v.Set("menu", "search")
 	v.Set("user", user)
-	v.Set("countUnread", h.store.CountUnreadEntries(user.ID))
-	v.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+	navMetadata, _ := h.store.GetNavMetadata(user.ID)
+	v.Set("countUnread", navMetadata.CountUnread)
+	v.Set("countErrorFeeds", navMetadata.CountErrorFeeds)
 	v.Set("defaultUserAgent", config.Opts.HTTPClientUserAgent())
 	v.Set("hasProxyConfigured", config.Opts.HasHTTPClientProxyURLConfigured())
 
@@ -51,7 +48,7 @@ func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 	if validationErr := entryForm.Validate(); validationErr != nil {
 		v.Set("form", entryForm)
 		v.Set("errorMessage", validationErr.Translate(user.Language))
-		html.OK(w, r, v.Render("add_entry"))
+		response.HTML(w, r, v.Render("add_entry"))
 		return
 	}
 
@@ -59,7 +56,7 @@ func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 	if entryForm.Date != "" {
 		date, err = time.Parse(time.DateOnly, entryForm.Date)
 		if err != nil {
-			html.ServerError(w, r, err)
+			response.HTMLServerError(w, r, err)
 			return
 		}
 	}
@@ -97,7 +94,7 @@ func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			v.Set("form", entryForm)
 			v.Set("errorMessage", err.Error()) // TODO: localize error message
-			html.OK(w, r, v.Render("add_entry"))
+			response.HTML(w, r, v.Render("add_entry"))
 			return
 		}
 
@@ -105,12 +102,12 @@ func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 		entry.Feed = newFeed
 
 	} else {
-		queryBuilder := storage.NewFeedQueryBuilder(h.store, user.ID)
+		queryBuilder := h.store.NewFeedQueryBuilder(user.ID)
 		queryBuilder.WithManual(true)
 		queryBuilder.WithFeedID(entryForm.FeedID)
 		feed, err := queryBuilder.GetFeed()
 		if err != nil {
-			html.ServerError(w, r, err)
+			response.HTMLServerError(w, r, err)
 			return
 		}
 		entry.FeedID = feed.ID
@@ -120,7 +117,7 @@ func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 	if entryForm.Download {
 		// Proccess the entry now to fill fields
 		if err := processor.ProcessEntryWebPage(entry.Feed, entry, user); err != nil {
-			html.ServerError(w, r, err)
+			response.HTMLServerError(w, r, err)
 			return
 		}
 	}
@@ -128,9 +125,9 @@ func (h *handler) submitEntry(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.CreateEntry(entry); err != nil {
 		v.Set("form", entryForm)
 		v.Set("errorMessage", err.Error()) // TODO: localize error message
-		html.OK(w, r, v.Render("add_entry"))
+		response.HTML(w, r, v.Render("add_entry"))
 		return
 	}
 
-	html.Redirect(w, r, route.Path(h.router, "feedEntry", "feedID", entry.FeedID, "entryID", entry.ID))
+	response.HTMLRedirect(w, r, h.routePath("/feed/%d/entry/%d", entry.FeedID, entry.ID))
 }

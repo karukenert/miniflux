@@ -5,7 +5,8 @@ package json // import "miniflux.app/v2/internal/reader/json"
 
 import (
 	"bytes"
-	"strings"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 )
@@ -415,6 +416,63 @@ func TestParseItemWithRelativeURL(t *testing.T) {
 	}
 }
 
+func TestParseItemWithExternalURLAndNoURL(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"id": "1234259",
+				"external_url": "some_page.html"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Fatalf("Incorrect number of entries, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].URL != "https://example.org/some_page.html" {
+		t.Errorf("Incorrect entry URL, got: %s", feed.Entries[0].URL)
+	}
+}
+
+func TestParseItemWithExternalURLAndURL(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"id": "1234259",
+				"url": "https://example.org/article",
+				"external_url": "https://example.org/another-article"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Fatalf("Incorrect number of entries, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].URL != "https://example.org/article" {
+		t.Errorf("Incorrect entry URL, got: %s", feed.Entries[0].URL)
+	}
+}
+
 func TestParseItemWithLegacyAuthorField(t *testing.T) {
 	data := `{
 		"version": "https://jsonfeed.org/version/1",
@@ -541,6 +599,39 @@ func TestParseItemWithMultipleDuplicateAuthors(t *testing.T) {
 	}
 }
 
+func TestParseItemWithAuthorsObject(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1.1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"id": "1",
+				"title": "Example Item",
+				"url": "https://example.org/item",
+				"date_published": "2020-01-02T03:04:05Z",
+				"authors": {
+					"name": "Example Author"
+				}
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Fatalf("Incorrect number of entries, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].Author != "Example Author" {
+		t.Errorf("Incorrect entry author, got: %s", feed.Entries[0].Author)
+	}
+}
+
 func TestParseItemWithInvalidDate(t *testing.T) {
 	data := `{
 		"version": "https://jsonfeed.org/version/1",
@@ -572,7 +663,94 @@ func TestParseItemWithInvalidDate(t *testing.T) {
 	}
 }
 
-func TestParseItemWithoutTitleButWithURL(t *testing.T) {
+func TestParseItemWithMissingTitleUsesSummaryFallback(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "My Example Feed",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"summary": "Summary title",
+				"content_text": "Content text title",
+				"content_html": "<p>HTML title</p>"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].Title != "Summary title" {
+		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
+	}
+}
+
+func TestParseItemWithMissingTitleUsesContentTextFallback(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "My Example Feed",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"summary": " ",
+				"content_text": "Content text title",
+				"content_html": "<p>HTML title</p>"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].Title != "Content text title" {
+		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
+	}
+}
+
+func TestParseItemWithMissingTitleUsesHTMLFallback(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "My Example Feed",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"summary": "",
+				"content_text": "",
+				"content_html": "<p>HTML title</p>"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].Title != "HTML title" {
+		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
+	}
+}
+
+func TestParseItemWithMissingTitleUsesURLFallback(t *testing.T) {
 	data := `{
 		"version": "https://jsonfeed.org/version/1",
 		"title": "My Example Feed",
@@ -595,91 +773,6 @@ func TestParseItemWithoutTitleButWithURL(t *testing.T) {
 	}
 
 	if feed.Entries[0].Title != "https://example.org/item" {
-		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
-	}
-}
-
-func TestParseItemWithoutTitleButWithSummary(t *testing.T) {
-	data := `{
-		"version": "https://jsonfeed.org/version/1",
-		"title": "My Example Feed",
-		"home_page_url": "https://example.org/",
-		"feed_url": "https://example.org/feed.json",
-		"items": [
-			{
-				"summary": "This is some text content."
-			}
-		]
-	}`
-
-	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(feed.Entries) != 1 {
-		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
-	}
-
-	if feed.Entries[0].Title != "This is some text content." {
-		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
-	}
-}
-
-func TestParseItemWithoutTitleButWithHTMLContent(t *testing.T) {
-	data := `{
-		"version": "https://jsonfeed.org/version/1",
-		"title": "My Example Feed",
-		"home_page_url": "https://example.org/",
-		"feed_url": "https://example.org/feed.json",
-		"items": [
-			{
-				"content_html": "This is <strong>HTML</strong>."
-			}
-		]
-	}`
-
-	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(feed.Entries) != 1 {
-		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
-	}
-
-	if feed.Entries[0].Title != "This is HTML." {
-		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
-	}
-}
-
-func TestParseItemWithoutTitleButWithTextContent(t *testing.T) {
-	data := `{
-		"version": "https://jsonfeed.org/version/1",
-		"title": "My Example Feed",
-		"home_page_url": "https://example.org/",
-		"feed_url": "https://example.org/feed.json",
-		"items": [
-			{
-				"content_text": "` + strings.Repeat("a", 200) + `"
-			}
-		]
-	}`
-
-	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(feed.Entries) != 1 {
-		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
-	}
-
-	if len(feed.Entries[0].Title) != 103 {
-		t.Errorf("Incorrect entry title, got: %d", len(feed.Entries[0].Title))
-	}
-
-	if len([]rune(feed.Entries[0].Title)) != 101 {
 		t.Errorf("Incorrect entry title, got: %s", feed.Entries[0].Title)
 	}
 }
@@ -742,15 +835,64 @@ func TestParseItemTitleWithXMLTags(t *testing.T) {
 	}
 }
 
-func TestParseItemWithoutID(t *testing.T) {
+func TestParseItemHashPrefersIDOverURL(t *testing.T) {
 	data := `{
 		"version": "https://jsonfeed.org/version/1",
-		"title": "My Example Feed",
+		"title": "Example",
 		"home_page_url": "https://example.org/",
 		"feed_url": "https://example.org/feed.json",
 		"items": [
 			{
-				"content_text": "Some text."
+				"id": "id-value",
+				"url": "https://example.org/article"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := sha256.Sum256([]byte("id-value"))
+	if feed.Entries[0].Hash != hex.EncodeToString(expected[:]) {
+		t.Errorf("Incorrect entry hash, got: %s", feed.Entries[0].Hash)
+	}
+}
+
+func TestParseItemHashUsesURLWhenNoID(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"url": "https://example.org/article"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := sha256.Sum256([]byte("https://example.org/article"))
+	if feed.Entries[0].Hash != hex.EncodeToString(expected[:]) {
+		t.Errorf("Incorrect entry hash, got: %s", feed.Entries[0].Hash)
+	}
+}
+
+func TestParseItemHashUsesExternalURLFallback(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"external_url": "https://example.org/external"
 			}
 		]
 	}`
@@ -761,10 +903,37 @@ func TestParseItemWithoutID(t *testing.T) {
 	}
 
 	if len(feed.Entries) != 1 {
-		t.Errorf("Incorrect number of entries, got: %d", len(feed.Entries))
+		t.Fatalf("Incorrect number of entries, got: %d", len(feed.Entries))
 	}
 
-	if feed.Entries[0].Hash != "13b4c5aecd1b6d749afcee968fbf9c80f1ed1bbdbe1aaf25cb34ebd01144bbe9" {
+	expected := sha256.Sum256([]byte("https://example.org/external"))
+	if feed.Entries[0].Hash != hex.EncodeToString(expected[:]) {
+		t.Errorf("Incorrect entry hash, got: %s", feed.Entries[0].Hash)
+	}
+}
+
+func TestParseItemHashFallsBackToContent(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"content_text": "Text",
+				"content_html": "<p>HTML</p>",
+				"summary": "Summary"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := sha256.Sum256([]byte("Text<p>HTML</p>Summary"))
+	if feed.Entries[0].Hash != hex.EncodeToString(expected[:]) {
 		t.Errorf("Incorrect entry hash, got: %s", feed.Entries[0].Hash)
 	}
 }
@@ -920,5 +1089,145 @@ func TestParseInvalidJSON(t *testing.T) {
 	_, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
 	if err == nil {
 		t.Error("Parse should returns an error")
+	}
+}
+
+func TestParseNullJSONFeed(t *testing.T) {
+	data := `null`
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatalf("Unexpected error when parsing null feed: %v", err)
+	}
+
+	if feed == nil {
+		t.Fatalf("Feed should not be nil")
+	}
+}
+
+func TestParseFeedWithLanguage(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1.1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"language": "en-US",
+		"items": []
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if feed.Language != "en-us" {
+		t.Errorf("Incorrect language, got: %q", feed.Language)
+	}
+}
+
+func TestParseFeedWithoutLanguage(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1.1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": []
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if feed.Language != "" {
+		t.Errorf("Expected empty language, got: %q", feed.Language)
+	}
+}
+
+func TestParseItemWithLanguage(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1.1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"language": "en-US",
+		"items": [
+			{
+				"id": "1",
+				"url": "https://example.org/item",
+				"content_text": "Bonjour",
+				"language": "fr-FR"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Fatalf("Expected 1 entry, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].Language != "fr-fr" {
+		t.Errorf("Incorrect entry language, got: %q", feed.Entries[0].Language)
+	}
+}
+
+func TestParseItemWithoutLanguageInheritsFeedLanguage(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1.1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"language": "en-US",
+		"items": [
+			{
+				"id": "1",
+				"url": "https://example.org/item",
+				"content_text": "Hello"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(feed.Entries) != 1 {
+		t.Fatalf("Expected 1 entry, got: %d", len(feed.Entries))
+	}
+
+	if feed.Entries[0].Language != "en-us" {
+		t.Errorf("Expected entry to inherit feed language, got: %q", feed.Entries[0].Language)
+	}
+}
+
+func TestParseItemWithPlainTextContentContainingHTMLCharacters(t *testing.T) {
+	data := `{
+		"version": "https://jsonfeed.org/version/1.1",
+		"title": "Example",
+		"home_page_url": "https://example.org/",
+		"feed_url": "https://example.org/feed.json",
+		"items": [
+			{
+				"id": "1",
+				"url": "https://example.org/1",
+				"content_text": "Use <div> literally: a & b < c"
+			}
+		]
+	}`
+
+	feed, err := Parse("https://example.org/feed.json", bytes.NewBufferString(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// content_text is plain text (JSON Feed 1.1), so it must be HTML-escaped
+	// before being stored as HTML, otherwise the sanitizer drops the markup.
+	want := "Use &lt;div&gt; literally: a &amp; b &lt; c"
+	if feed.Entries[0].Content != want {
+		t.Errorf("Incorrect entry content, got: %q, want: %q", feed.Entries[0].Content, want)
 	}
 }

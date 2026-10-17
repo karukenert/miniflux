@@ -11,7 +11,7 @@ import (
 	"miniflux.app/v2/internal/http/request"
 )
 
-type RequestModifiers struct {
+type requestModifiers struct {
 	ExcludeTargets    []Stream
 	FilterTargets     []Stream
 	Streams           []Stream
@@ -24,24 +24,24 @@ type RequestModifiers struct {
 	UserID            int64
 }
 
-func (r RequestModifiers) String() string {
+func (r requestModifiers) String() string {
 	var results []string
 
 	results = append(results, fmt.Sprintf("UserID: %d", r.UserID))
 
-	var streamStr []string
+	streamStr := make([]string, 0, len(r.Streams))
 	for _, s := range r.Streams {
 		streamStr = append(streamStr, s.String())
 	}
 	results = append(results, fmt.Sprintf("Streams: [%s]", strings.Join(streamStr, ", ")))
 
-	var exclusions []string
+	exclusions := make([]string, 0, len(r.ExcludeTargets))
 	for _, s := range r.ExcludeTargets {
 		exclusions = append(exclusions, s.String())
 	}
 	results = append(results, fmt.Sprintf("Exclusions: [%s]", strings.Join(exclusions, ", ")))
 
-	var filters []string
+	filters := make([]string, 0, len(r.FilterTargets))
 	for _, s := range r.FilterTargets {
 		filters = append(filters, s.String())
 	}
@@ -49,17 +49,17 @@ func (r RequestModifiers) String() string {
 
 	results = append(results, fmt.Sprintf("Count: %d", r.Count))
 	results = append(results, fmt.Sprintf("Offset: %d", r.Offset))
-	results = append(results, fmt.Sprintf("Sort Direction: %s", r.SortDirection))
-	results = append(results, fmt.Sprintf("Continuation Token: %s", r.ContinuationToken))
+	results = append(results, "Sort Direction: "+r.SortDirection)
+	results = append(results, "Continuation Token: "+r.ContinuationToken)
 	results = append(results, fmt.Sprintf("Start Time: %d", r.StartTime))
 	results = append(results, fmt.Sprintf("Stop Time: %d", r.StopTime))
 
 	return strings.Join(results, "; ")
 }
 
-func parseStreamFilterFromRequest(r *http.Request) (RequestModifiers, error) {
+func parseStreamFilterFromRequest(r *http.Request) (requestModifiers, error) {
 	userID := request.UserID(r)
-	result := RequestModifiers{
+	result := requestModifiers{
 		SortDirection: "desc",
 		UserID:        userID,
 	}
@@ -71,16 +71,16 @@ func parseStreamFilterFromRequest(r *http.Request) (RequestModifiers, error) {
 	var err error
 	result.Streams, err = getStreams(request.QueryStringParamList(r, paramStreamID), userID)
 	if err != nil {
-		return RequestModifiers{}, err
+		return requestModifiers{}, err
 	}
 	result.ExcludeTargets, err = getStreams(request.QueryStringParamList(r, paramStreamExcludes), userID)
 	if err != nil {
-		return RequestModifiers{}, err
+		return requestModifiers{}, err
 	}
 
 	result.FilterTargets, err = getStreams(request.QueryStringParamList(r, paramStreamFilters), userID)
 	if err != nil {
-		return RequestModifiers{}, err
+		return requestModifiers{}, err
 	}
 
 	result.Count = request.QueryIntParam(r, paramStreamMaxItems, 0)

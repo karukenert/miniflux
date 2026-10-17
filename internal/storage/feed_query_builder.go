@@ -9,13 +9,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lib/pq"
 	"miniflux.app/v2/internal/model"
 	"miniflux.app/v2/internal/timezone"
 )
 
-// FeedQueryBuilder builds a SQL query to fetch feeds.
-type FeedQueryBuilder struct {
-	store             *Storage
+// feedQueryBuilder builds a SQL query to fetch feeds.
+type feedQueryBuilder struct {
+	db                *sql.DB
 	args              []any
 	conditions        []string
 	sortExpressions   []string
@@ -28,9 +29,9 @@ type FeedQueryBuilder struct {
 }
 
 // NewFeedQueryBuilder returns a new FeedQueryBuilder.
-func NewFeedQueryBuilder(store *Storage, userID int64) *FeedQueryBuilder {
-	return &FeedQueryBuilder{
-		store:             store,
+func (s *Storage) NewFeedQueryBuilder(userID int64) *feedQueryBuilder {
+	return &feedQueryBuilder{
+		db:                s.db,
 		args:              []any{userID},
 		conditions:        []string{"f.user_id = $1"},
 		counterArgs:       []any{userID, model.EntryStatusRead, model.EntryStatusUnread},
@@ -39,7 +40,7 @@ func NewFeedQueryBuilder(store *Storage, userID int64) *FeedQueryBuilder {
 }
 
 // WithCategoryID filter by category ID.
-func (f *FeedQueryBuilder) WithCategoryID(categoryID int64) *FeedQueryBuilder {
+func (f *feedQueryBuilder) WithCategoryID(categoryID int64) *feedQueryBuilder {
 	if categoryID > 0 {
 		f.conditions = append(f.conditions, "f.category_id = $"+strconv.Itoa(len(f.args)+1))
 		f.args = append(f.args, categoryID)
@@ -55,7 +56,7 @@ func (f *FeedQueryBuilder) WithCategoryID(categoryID int64) *FeedQueryBuilder {
 }
 
 // WithFeedID filter by feed ID.
-func (f *FeedQueryBuilder) WithFeedID(feedID int64) *FeedQueryBuilder {
+func (f *feedQueryBuilder) WithFeedID(feedID int64) *feedQueryBuilder {
 	if feedID > 0 {
 		f.conditions = append(f.conditions, "f.id = $"+strconv.Itoa(len(f.args)+1))
 		f.args = append(f.args, feedID)
@@ -64,45 +65,51 @@ func (f *FeedQueryBuilder) WithFeedID(feedID int64) *FeedQueryBuilder {
 }
 
 // WithCounters let the builder return feeds with counters of statuses of entries.
-func (f *FeedQueryBuilder) WithCounters() *FeedQueryBuilder {
+func (f *feedQueryBuilder) WithCounters() *feedQueryBuilder {
 	f.withCounters = true
 	return f
 }
 
 // WithSorting add a sort expression.
-func (f *FeedQueryBuilder) WithSorting(column, direction string) *FeedQueryBuilder {
-	f.sortExpressions = append(f.sortExpressions, column+" "+direction)
+func (f *feedQueryBuilder) WithSorting(column, direction string) *feedQueryBuilder {
+	switch {
+	case strings.EqualFold(direction, "ASC"):
+		f.sortExpressions = append(f.sortExpressions, pq.QuoteIdentifier(column)+" ASC")
+	case strings.EqualFold(direction, "DESC"):
+		f.sortExpressions = append(f.sortExpressions, pq.QuoteIdentifier(column)+" DESC")
+	}
+
 	return f
 }
 
 // WithLimit set the limit.
-func (f *FeedQueryBuilder) WithLimit(limit int) *FeedQueryBuilder {
+func (f *feedQueryBuilder) WithLimit(limit int) *feedQueryBuilder {
 	f.limit = limit
 	return f
 }
 
 // WithOffset set the offset.
-func (f *FeedQueryBuilder) WithOffset(offset int) *FeedQueryBuilder {
+func (f *feedQueryBuilder) WithOffset(offset int) *feedQueryBuilder {
 	f.offset = offset
 	return f
 }
 
 // WithManual filter by manual status.
-func (f *FeedQueryBuilder) WithManual(manual bool) *FeedQueryBuilder {
+func (f *feedQueryBuilder) WithManual(manual bool) *feedQueryBuilder {
 	f.conditions = append(f.conditions, "f.manual = $"+strconv.Itoa(len(f.args)+1))
 	f.args = append(f.args, manual)
 	return f
 }
 
-func (f *FeedQueryBuilder) buildCondition() string {
+func (f *feedQueryBuilder) buildCondition() string {
 	return strings.Join(f.conditions, " AND ")
 }
 
-func (f *FeedQueryBuilder) buildCounterCondition() string {
+func (f *feedQueryBuilder) buildCounterCondition() string {
 	return strings.Join(f.counterConditions, " AND ")
 }
 
-func (f *FeedQueryBuilder) buildSorting() string {
+func (f *feedQueryBuilder) buildSorting() string {
 	var parts string
 
 	if len(f.sortExpressions) > 0 {
@@ -125,7 +132,7 @@ func (f *FeedQueryBuilder) buildSorting() string {
 }
 
 // GetFeed returns a single feed that match the condition.
-func (f *FeedQueryBuilder) GetFeed() (*model.Feed, error) {
+func (f *feedQueryBuilder) GetFeed() (*model.Feed, error) {
 	f.limit = 1
 	feeds, err := f.GetFeeds()
 	if err != nil {
@@ -140,14 +147,15 @@ func (f *FeedQueryBuilder) GetFeed() (*model.Feed, error) {
 }
 
 // GetFeeds returns a list of feeds that match the condition.
-func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
-	var query = `
+func (f *feedQueryBuilder) GetFeeds() (model.Feeds, error) {
+	query := `
 		SELECT
 			f.id,
 			f.feed_url,
 			f.site_url,
 			f.title,
 			f.description,
+			f.language,
 			f.etag_header,
 			f.last_modified_header,
 			f.user_id,
@@ -188,6 +196,7 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 			f.pushover_enabled,
 			f.pushover_priority,
 			f.proxy_url,
+			f.ignore_entry_updates,
 			f.manual
 		FROM
 			feeds f
@@ -205,16 +214,16 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 
 	query = fmt.Sprintf(query, f.buildCondition(), f.buildSorting())
 
-	rows, err := f.store.db.Query(query, f.args...)
-	if err != nil {
-		return nil, fmt.Errorf(`store: unable to fetch feeds: %w`, err)
-	}
-	defer rows.Close()
-
 	readCounters, unreadCounters, err := f.fetchFeedCounter()
 	if err != nil {
 		return nil, err
 	}
+
+	rows, err := f.db.Query(query, f.args...)
+	if err != nil {
+		return nil, fmt.Errorf(`store: unable to fetch feeds: %w`, err)
+	}
+	defer rows.Close()
 
 	feeds := make(model.Feeds, 0)
 	for rows.Next() {
@@ -232,6 +241,7 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 			&feed.SiteURL,
 			&feed.Title,
 			&feed.Description,
+			&feed.Language,
 			&feed.EtagHeader,
 			&feed.LastModifiedHeader,
 			&feed.UserID,
@@ -272,9 +282,9 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 			&feed.PushoverEnabled,
 			&feed.PushoverPriority,
 			&feed.ProxyURL,
+			&feed.IgnoreEntryUpdates,
 			&feed.Manual,
 		)
-
 		if err != nil {
 			return nil, fmt.Errorf(`store: unable to fetch feeds row: %w`, err)
 		}
@@ -319,7 +329,7 @@ func (f *FeedQueryBuilder) GetFeeds() (model.Feeds, error) {
 	return feeds, nil
 }
 
-func (f *FeedQueryBuilder) fetchFeedCounter() (unreadCounters map[int64]int, readCounters map[int64]int, err error) {
+func (f *feedQueryBuilder) fetchFeedCounter() (unreadCounters map[int64]int, readCounters map[int64]int, err error) {
 	if !f.withCounters {
 		return nil, nil, nil
 	}
@@ -338,11 +348,11 @@ func (f *FeedQueryBuilder) fetchFeedCounter() (unreadCounters map[int64]int, rea
 	`
 	join := ""
 	if f.counterJoinFeeds {
-		join = "LEFT JOIN feeds f ON f.id=e.feed_id"
+		join = "INNER JOIN feeds f ON f.id=e.feed_id"
 	}
 	query = fmt.Sprintf(query, join, f.buildCounterCondition())
 
-	rows, err := f.store.db.Query(query, f.counterArgs...)
+	rows, err := f.db.Query(query, f.counterArgs...)
 	if err != nil {
 		return nil, nil, fmt.Errorf(`store: unable to fetch feed counts: %w`, err)
 	}

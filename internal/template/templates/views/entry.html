@@ -4,7 +4,7 @@
 <div class="pagination">
     <div class="pagination-prev {{ if not .prevEntry }}disabled{{end}}">
         {{ if .prevEntry }}
-            <a href="{{ .prevEntryRoute }}{{ if .searchQuery }}?q={{ .searchQuery }}{{ end }}" title="{{ or .prevEntry.Title .prevEntry.URL }}" data-page="previous" rel="prev">{{ t "pagination.previous" }}</a>
+            <a href="{{ .prevEntryRoute }}{{ queryString (dict "q" .searchQuery "unread" .searchUnreadOnly) }}" title="{{ or .prevEntry.Title .prevEntry.URL }}" data-page="previous" rel="prev">{{ t "pagination.previous" }}</a>
         {{ else }}
             {{ t "pagination.previous" }}
         {{ end }}
@@ -14,7 +14,7 @@
 
     <div class="pagination-next {{ if not .nextEntry }}disabled{{end}}">
         {{ if .nextEntry }}
-            <a href="{{ .nextEntryRoute }}{{ if .searchQuery }}?q={{ .searchQuery }}{{ end }}" title="{{ or .nextEntry.Title .nextEntry.URL }}" data-page="next" rel="next">{{ t "pagination.next" }}</a>
+            <a href="{{ .nextEntryRoute }}{{ queryString (dict "q" .searchQuery "unread" .searchUnreadOnly) }}" title="{{ or .nextEntry.Title .nextEntry.URL }}" data-page="next" rel="next">{{ t "pagination.next" }}</a>
         {{ else }}
             {{ t "pagination.next" }}
         {{ end }}
@@ -44,10 +44,8 @@
 {{ define "page_header"}}
 <section class="entry" data-id="{{ .entry.ID }}" aria-labelledby="page-header-title">
     <header class="entry-header">
-        <h1 id="page-header-title" dir="auto">
-            <a href="{{ .entry.URL | safeURL }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ else }}rel="noopener"{{ end }}>
-                {{ or .entry.Title .entry.URL }}
-            </a>
+        <h1 id="page-header-title" dir="auto" {{ with or .entry.Language .entry.Feed.Language }}lang="{{ . }}"{{ end }}>
+            <a href="{{ .entry.URL | untrustedURL }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ else }}rel="noopener"{{ end }}>{{ or .entry.Title .entry.URL }}</a>
         </h1>
         {{ if .user }}
         <div class="entry-actions">
@@ -69,7 +67,7 @@
                     <button
                         class="page-button"
                         data-toggle-starred="true"
-                        data-star-url="{{ route "toggleStarred" "entryID" .entry.ID }}"
+                        data-star-url="{{ routePath "/entry/star/%d" .entry.ID }}"
                         data-label-loading="{{ t "entry.state.saving" }}"
                         data-label-star="{{ t "entry.starred.toggle.on" }}"
                         data-label-unstar="{{ t "entry.starred.toggle.off" }}"
@@ -84,7 +82,7 @@
                         class="page-button"
                         title="{{ t "entry.save.title" }}"
                         data-save-entry="true"
-                        data-save-url="{{ route "saveEntry" "entryID" .entry.ID }}"
+                        data-save-url="{{ routePath "/entry/save/%d" .entry.ID }}"
                         data-label-loading="{{ t "entry.state.saving" }}"
                         data-label-done="{{ t "entry.save.completed" }}"
                         data-toast-done="{{ t "entry.save.toast.completed" }}"
@@ -93,7 +91,7 @@
                 {{ end }}
                 {{ if .entry.ShareCode }}
                 <li>
-                    <a href="{{ route "sharedEntry" "shareCode" .entry.ShareCode }}"
+                    <a href="{{ routePath "/share/%s" .entry.ShareCode }}"
                         title="{{ t "entry.shared_entry.title" }}"
                         data-share-status="shared"
                         {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>{{ icon "share" }}<span class="icon-label">{{ t "entry.shared_entry.label" }}</span></a>
@@ -102,7 +100,7 @@
                     <button
                         class="page-button"
                         data-confirm="true"
-                        data-url="{{ route "unshareEntry" "entryID" .entry.ID }}"
+                        data-url="{{ routePath "/entry/unshare/%d" .entry.ID }}"
                         data-label-question="{{ t "confirm.question" }}"
                         data-label-yes="{{ t "confirm.yes" }}"
                         data-label-no="{{ t "confirm.no" }}"
@@ -110,7 +108,7 @@
                 </li>
                 {{ else }}
                 <li>
-                    <form method="post" action="{{route "shareEntry" "entryID" .entry.ID }}">
+                    <form method="post" action="{{ routePath "/entry/share/%d" .entry.ID }}">
                         <input type="hidden" name="csrf" value="{{ .csrf }}">
                         <button type="submit" class="page-button">
                             {{ icon "share" }}<span class="icon-label">{{ t "entry.share.label" }}</span>
@@ -123,19 +121,19 @@
                         class="page-button"
                         title="{{ t "entry.scraper.title" }}"
                         data-fetch-content-entry="true"
-                        data-fetch-content-url="{{ route "fetchContent" "entryID" .entry.ID }}"
+                        data-fetch-content-url="{{ routePath "/entry/download/%d" .entry.ID }}"
                         data-label-loading="{{ t "entry.state.loading" }}"
                         >{{ icon "scraper" }}<span class="icon-label">{{ t "entry.scraper.label" }}</span></button>
                 </li>
                 <li>
                     <a
                         title="{{ t "entry.edit.title" }}"
-                        href="{{ route "editEntry" "entryID" .entry.ID }}"
+                        href="{{ routePath "/entry/%d/edit" .entry.ID }}"
                         >{{ icon "edit" }}<span class="icon-label">{{ t "entry.edit.label" }}</span></a>
                 </li>
                 {{ if .entry.CommentsURL }}
                 <li>
-                    <a href="{{ .entry.CommentsURL | safeURL }}"
+                    <a href="{{ .entry.CommentsURL }}"
                         class="page-link"
                         title="{{ t "entry.comments.title" }}"
                         {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ else }}rel="noopener"{{ end }}
@@ -149,12 +147,12 @@
         <div class="entry-meta" dir="auto">
             <span class="entry-website">
                 {{ if ne .entry.Feed.Icon.IconID 0 }}
-                <img src="{{ route "feedIcon" "externalIconID" .entry.Feed.Icon.ExternalIconID }}" width="16" height="16" loading="lazy" alt="{{ .entry.Feed.Title }}">
+                <img src="{{ routePath "/feed-icon/%s" .entry.Feed.Icon.ExternalIconID }}" width="16" height="16" loading="lazy" alt="{{ .entry.Feed.Title }}">
                 {{ end }}
                 {{ if .user }}
-                <a href="{{ route "feedEntries" "feedID" .entry.Feed.ID }}">{{ .entry.Feed.Title }}</a>
+                <a href="{{ routePath "/feed/%d/entries" .entry.Feed.ID }}">{{ .entry.Feed.Title }}</a>
                 {{ else }}
-                <a href="{{ .entry.Feed.SiteURL | safeURL }}">{{ .entry.Feed.Title }}</a>
+                <a href="{{ .entry.Feed.SiteURL }}">{{ .entry.Feed.Title }}</a>
                 {{ end }}
             </span>
             {{ if .entry.Author }}
@@ -168,7 +166,7 @@
             {{ end }}
             {{ if .user }}
             <span class="category">
-                <a href="{{ route "categoryEntries" "categoryID" .entry.Feed.Category.ID }}">{{ .entry.Feed.Category.Title }}</a>
+                <a href="{{ routePath "/category/%d/entries" .entry.Feed.Category.ID }}">{{ .entry.Feed.Category.Title }}</a>
             </span>
             {{ end }}
         </div>
@@ -184,7 +182,7 @@
                 {{ range $i, $tagName := $allTags }}
                     {{ if lt $i $tagsLimit }}
                         {{ if $.user }}
-                            <li><a href="{{ route "tagEntriesAll" "tagName" (urlEncode $tagName) }}"><strong>{{ $tagName }}</strong></a></li>
+                            <li><a href="{{ routePath "/tags/%s/entries/all" (urlEncode $tagName) }}"><strong>{{ $tagName }}</strong></a></li>
                         {{ else }}
                             <li><strong>{{ $tagName }}</strong></li>
                         {{ end }}
@@ -201,7 +199,7 @@
                     {{ range $idx, $tagName := $allTags }}
                         {{ if ge $idx $tagsLimit }}
                             {{ if $.user }}
-                                <li><a href="{{ route "tagEntriesAll" "tagName" (urlEncode $tagName) }}"><strong>{{ $tagName }}</strong></a></li>
+                                <li><a href="{{ routePath "/tags/%s/entries/all" (urlEncode $tagName) }}"><strong>{{ $tagName }}</strong></a></li>
                             {{ else }}
                                 <li><strong>{{ $tagName }}</strong></li>
                             {{ end }}
@@ -214,7 +212,7 @@
         {{ end }}
         <div class="entry-external-link">
             <a
-                href="{{ .entry.URL | safeURL  }}"
+                href="{{ .entry.URL | untrustedURL }}"
                 {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ else }}rel="noopener"{{ end }}
                 data-original-link="{{ $.user.MarkReadOnView }}">{{ .entry.URL }}</span></a>
         </div>
@@ -244,7 +242,7 @@
 </div>
 {{ end }}
 {{ end }}
-<article class="entry-content {{ if ne $.user.GestureNav "none" }}gesture-nav-{{ $.user.GestureNav }}{{ end }}" dir="auto">
+<article class="entry-content {{ if ne $.user.GestureNav "none" }}gesture-nav-{{ $.user.GestureNav }}{{ end }}" dir="auto" {{ with or .entry.Language .entry.Feed.Language }}lang="{{ . }}"{{ end }}>
     {{ if not .entry.Feed.NoMediaPlayer }}
         {{ $mediaPlayerEnclosure := .entry.Enclosures.FindMediaPlayerEnclosure }}
 
@@ -256,13 +254,13 @@
                             {{ if $.user }}data-last-position="{{ .MediaProgression }}"{{ end }}
                             {{ if $.user.MediaPlaybackRate }}data-playback-rate="{{ $.user.MediaPlaybackRate }}"{{ end }}
                             {{ if $.user.MarkReadOnMediaPlayerCompletion }}data-mark-read-on-completion="0.9"{{ end }}
-                            {{ if $.user }}data-save-url="{{ route "saveEnclosureProgression" "enclosureID" .ID }}"{{ end }}
+                            {{ if $.user }}data-save-url="{{ routePath "/entry/enclosure/%d/save-progression" .ID }}"{{ end }}
                             data-enclosure-id="{{ .ID }}"
                             >
                             {{ if (and $.user (mustBeProxyfied "audio")) }}
                             <source src="{{ proxyURL .URL }}" type="{{ .Html5MimeType }}">
                             {{ else }}
-                            <source src="{{ .URL | safeURL }}" type="{{ .Html5MimeType }}">
+                            <source src="{{ .URL | untrustedURL }}" type="{{ .Html5MimeType }}">
                             {{ end }}
                         </audio>
                         {{ template "enclosure_media_controls" . }}
@@ -273,13 +271,13 @@
                             {{ if $.user }}data-last-position="{{ .MediaProgression }}"{{ end }}
                             {{ if $.user.MediaPlaybackRate }}data-playback-rate="{{ $.user.MediaPlaybackRate }}"{{ end }}
                             {{ if $.user.MarkReadOnMediaPlayerCompletion }}data-mark-read-on-completion="0.9"{{ end }}
-                            {{ if $.user }}data-save-url="{{ route "saveEnclosureProgression" "enclosureID" .ID }}"{{ end }}
+                            {{ if $.user }}data-save-url="{{ routePath "/entry/enclosure/%d/save-progression" .ID }}"{{ end }}
                             data-enclosure-id="{{ .ID }}"
                             >
                             {{ if (and $.user (mustBeProxyfied "video")) }}
                             <source src="{{ proxyURL .URL }}" type="{{ .Html5MimeType }}">
                             {{ else }}
-                            <source src="{{ .URL | safeURL }}" type="{{ .Html5MimeType }}">
+                            <source src="{{ .URL | untrustedURL }}" type="{{ .Html5MimeType }}">
                             {{ end }}
                         </video>
                         {{ template "enclosure_media_controls" . }}
@@ -306,13 +304,13 @@
             {{ if (and $.user (mustBeProxyfied "image")) }}
             <img src="{{ proxyURL .URL }}" title="{{ .URL }} ({{ .MimeType }})" loading="lazy" alt="{{ .URL }} ({{ .MimeType }})">
             {{ else }}
-            <img src="{{ .URL | safeURL }}" title="{{ .URL }} ({{ .MimeType }})" loading="lazy" alt="{{ .URL }} ({{ .MimeType }})">
+            <img src="{{ .URL | untrustedURL }}" title="{{ .URL }} ({{ .MimeType }})" loading="lazy" alt="{{ .URL }} ({{ .MimeType }})">
             {{ end }}
         </div>
         {{ end }}
 
         <div class="entry-enclosure-download">
-            <a href="{{ .URL | safeURL }}" title="{{ t "action.download" }}{{ if gt .Size 0 }} - {{ formatFileSize .Size }}{{ end }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ else }}rel="noopener"{{ end }}>{{ .URL | safeURL  }}</a>
+            <a href="{{ .URL | untrustedURL }}" title="{{ t "action.download" }}{{ if gt .Size 0 }} - {{ formatFileSize .Size }}{{ end }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ else }}rel="noopener"{{ end }}>{{ .URL }}</a>
             <small>{{ if gt .Size 0 }} - <strong>{{ formatFileSize .Size }}</strong>{{ end }}</small>
         </div>
     </div>

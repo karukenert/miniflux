@@ -42,10 +42,8 @@ function sendPOSTRequest(url, body = null) {
  * @param {string} url
  */
 function openNewTab(url) {
-    const win = window.open("");
-    win.opener = null;
-    win.location = url;
-    win.focus();
+    const win = window.open(url, "_blank", "noreferrer");
+    if (win) win.focus();
 }
 
 /**
@@ -284,7 +282,7 @@ function showToastNotification(iconType, notificationMessage) {
  * @param {boolean} reloadOnFail - If true, reload the current page if the target page is not found.
  */
 function goToPage(page, reloadOnFail = false) {
-    const element = document.querySelector(":is(a, button)[data-page=" + page + "]");
+    const element = document.querySelector(`:is(a, button)[data-page=${page}]`);
 
     if (element) {
         document.location.href = element.href;
@@ -500,9 +498,9 @@ function toggleAriaAttributesOnMainMenu() {
         homePageLinkElement.tabIndex = -1;
     } else {
         // Remove mobile menu button attributes
-        ["role", "tabindex", "aria-expanded", "aria-label"].forEach(attr =>
-            logoElement.removeAttribute(attr)
-        );
+        ["role", "tabindex", "aria-expanded", "aria-label"].forEach(attr => {
+            logoElement.removeAttribute(attr);
+        });
         homePageLinkElement.removeAttribute("tabindex");
     }
 }
@@ -549,10 +547,11 @@ function initializeMainMenuHandlers() {
 
     onClick(".header nav li", (event) => {
         const linkElement = event.target.closest("a") || event.target.querySelector("a");
-        if (linkElement) {
+        if (linkElement && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
+            event.preventDefault();
             window.location.href = linkElement.getAttribute("href");
         }
-    });
+    }, true);
 }
 
 /**
@@ -578,8 +577,7 @@ function initializeFormHandlers() {
  * Show the keyboard shortcuts modal.
  */
 function showKeyboardShortcutsAction() {
-    const template = document.getElementById("keyboard-shortcuts");
-    KeyboardModalHandler.open(template.content, "dialog-title");
+    document.getElementById("keyboard-shortcuts-modal").showModal();
 }
 
 /**
@@ -589,10 +587,10 @@ function markPageAsReadAction() {
     const items = getVisibleEntries();
     if (items.length === 0) return;
 
-    const entryIDs = items.map((element) => {
-        element.classList.add("item-status-read");
-        return parseInt(element.dataset.id, 10);
-    });
+    const entryIDs = items.map((element) => parseInt(element.dataset.id, 10));
+
+    // Batch DOM writes after all reads
+    items.forEach((element) => element.classList.add("item-status-read"));
 
     updateEntriesStatus(entryIDs, "read", () => {
         const element = document.querySelector(":is(a, button)[data-action=markPageAsRead]");
@@ -658,10 +656,7 @@ function toggleEntryStatus(element, toasting) {
             showToastNotification(newStatus, currentStatus === "read" ? buttonElement.dataset.toastUnread : buttonElement.dataset.toastRead);
         }
 
-        if (element.classList.contains("item-status-" + currentStatus)) {
-            element.classList.remove("item-status-" + currentStatus);
-            element.classList.add("item-status-" + newStatus);
-        }
+        element.classList.replace(`item-status-${currentStatus}`, `item-status-${newStatus}`);
 
         if (isListView() && getVisibleEntries().length === 0) {
             window.location.reload();
@@ -672,13 +667,28 @@ function toggleEntryStatus(element, toasting) {
 /**
  * Handle the refresh of all feeds.
  *
- * This function redirects the user to the URL specified in the data-refresh-all-feeds-url attribute of the body element.
+ * This submits a real form POST to the URL specified in the data-refresh-all-feeds-url
+ * attribute of the body element, so the browser follows the redirect once and renders the
+ * server-side flash message, matching the behavior of the menu button.
  */
 function handleRefreshAllFeedsAction() {
     const refreshAllFeedsUrl = document.body.dataset.refreshAllFeedsUrl;
-    if (refreshAllFeedsUrl) {
-        window.location.href = refreshAllFeedsUrl;
+    if (!refreshAllFeedsUrl) {
+        return;
     }
+
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = refreshAllFeedsUrl;
+
+    const csrfField = document.createElement("input");
+    csrfField.type = "hidden";
+    csrfField.name = "csrf";
+    csrfField.value = document.body.dataset.csrfToken || "";
+    form.appendChild(csrfField);
+
+    document.body.appendChild(form);
+    form.submit();
 }
 
 /**
@@ -831,10 +841,7 @@ function openOriginalLinkFromListView() {
     goToListItem(1);
 
     // Mark as read if currently unread
-    if (currentItem.classList.contains("item-status-unread")) {
-        currentItem.classList.remove("item-status-unread");
-        currentItem.classList.add("item-status-read");
-
+    if (currentItem.classList.replace("item-status-unread", "item-status-read")) {
         const entryID = parseInt(currentItem.dataset.id, 10);
         updateEntriesStatus([entryID], "read");
     }
@@ -907,7 +914,7 @@ function updateUnreadCounterValue(delta) {
     if (window.location.href.endsWith('/unread')) {
         const oldValue = parseInt(document.title.split('(')[1], 10);
         const newValue = oldValue + delta;
-        document.title = document.title.replace(/(.*?)\(\d+\)(.*?)/, `$1(${newValue})$2`);
+        document.title = document.title.replace(/\(\d+\)/, `(${newValue})`);
     }
 }
 
@@ -968,7 +975,7 @@ function handleConfirmationMessage(linkElement, callback) {
     };
 
     questionElement.className = "confirm";
-    questionElement.appendChild(document.createTextNode(linkElement.dataset.labelQuestion + " "));
+    questionElement.appendChild(document.createTextNode(`${linkElement.dataset.labelQuestion} `));
     questionElement.appendChild(yesElement);
     questionElement.appendChild(document.createTextNode(", "));
     questionElement.appendChild(noElement);
@@ -1163,7 +1170,7 @@ function initializeWebAuthn() {
 
         onClick("#webauthn-login", () => {
             abortController.abort();
-            webauthnHandler.login(usernameField.value).catch(err => WebAuthnHandler.showErrorMessage(err));
+            webauthnHandler.login().catch(err => WebAuthnHandler.showErrorMessage(err));
         });
 
         webauthnHandler.conditionalLogin(abortController).catch(err => WebAuthnHandler.showErrorMessage(err));
@@ -1225,7 +1232,6 @@ function initializeKeyboardShortcuts() {
 
     // UI actions
     keyboardHandler.on("?", showKeyboardShortcutsAction);
-    keyboardHandler.on("Escape", () => KeyboardModalHandler.close());
     keyboardHandler.on("a", () => {
         const enclosureElement = document.querySelector('.entry-enclosures');
         if (enclosureElement) {

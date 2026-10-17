@@ -10,13 +10,13 @@
     <nav aria-label="{{ .category.Title }} {{ t "page.feeds.title" }} {{ t "menu.title" }}">
         <ul>
             <li>
-                <a class="page-link" href="{{ route "categoryEntries" "categoryID" .category.ID }}">{{ icon "entries" }}{{ t "menu.feed_entries" }}</a>
+                <a class="page-link" href="{{ routePath "/category/%d/entries" .category.ID }}">{{ icon "entries" }}{{ t "menu.feed_entries" }}</a>
             </li>
             <li>
-                <a class="page-link" href="{{ route "editCategory" "categoryID" .category.ID }}">{{ icon "edit" }}{{ t "menu.edit_category" }}</a>
+                <a class="page-link" href="{{ routePath "/category/%d/edit" .category.ID }}">{{ icon "edit" }}{{ t "menu.edit_category" }}</a>
             </li>
             <li>
-                <a class="page-link" href="{{ route "addSubscription" }}?category_id={{ .category.ID }}">{{ icon "add-feed" }}{{ t "menu.add_feed" }}</a>
+                <a class="page-link" href="{{ routePath "/subscribe" }}?category_id={{ .category.ID }}">{{ icon "add-feed" }}{{ t "menu.add_feed" }}</a>
             </li>
             {{ if eq .total 0 }}
             <li>
@@ -27,8 +27,8 @@
                     data-label-yes="{{ t "confirm.yes" }}"
                     data-label-no="{{ t "confirm.no" }}"
                     data-label-loading="{{ t "confirm.loading" }}"
-                    data-redirect-url="{{ route "categories" }}"
-                    data-url="{{ route "removeCategory" "categoryID" .category.ID }}"
+                    data-redirect-url="{{ routePath "/categories" }}"
+                    data-url="{{ routePath "/category/%d/remove" .category.ID }}"
                 >
                     {{ icon "delete" }}{{ t "action.remove" }}
                 </button>
@@ -37,8 +37,10 @@
             <li>
                 <form
                     class="page-header-action-form"
-                    action="{{ route "refreshCategoryFeedsPage" "categoryID" .category.ID }}"
+                    action="{{ routePath "/category/%d/feeds/refresh" .category.ID }}"
+                    method="post"
                 >
+                    <input type="hidden" name="csrf" value="{{ .csrf }}">
                     <button
                         class="page-button"
                         data-label-loading="{{ t "confirm.loading" }}"
@@ -56,7 +58,7 @@
 {{ if not .feeds }}
     <p role="alert" class="alert">{{ t "alert.no_feed_in_category" }}</p>
 {{ else }}
-    {{ template "feed_list" dict "categoryID" .category.ID "user" .user "feeds" .feeds "ParsingErrorCount" .ParsingErrorCount }}
+    {{ template "feed_list" dict "categoryID" .category.ID "user" .user "feeds" .feeds "ParsingErrorCount" .ParsingErrorCount "csrf" .csrf }}
 {{ end }}
 
 {{ end }}

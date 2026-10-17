@@ -7,23 +7,27 @@ import (
 	"net/http"
 
 	"miniflux.app/v2/internal/http/request"
-	"miniflux.app/v2/internal/http/response/html"
-	"miniflux.app/v2/internal/http/route"
+	"miniflux.app/v2/internal/http/response"
 )
 
 func (h *handler) removeCategoryFeed(w http.ResponseWriter, r *http.Request) {
 	feedID := request.RouteInt64Param(r, "feedID")
 	categoryID := request.RouteInt64Param(r, "categoryID")
 
-	if !h.store.CategoryFeedExists(request.UserID(r), categoryID, feedID) {
-		html.NotFound(w, r)
+	exists, err := h.store.CategoryFeedExists(request.UserID(r), categoryID, feedID)
+	if err != nil {
+		response.HTMLServerError(w, r, err)
+		return
+	}
+	if !exists {
+		response.HTMLNotFound(w, r)
 		return
 	}
 
 	if err := h.store.RemoveFeed(request.UserID(r), feedID); err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
 
-	html.Redirect(w, r, route.Path(h.router, "categoryFeeds", "categoryID", categoryID))
+	response.HTMLRedirect(w, r, h.routePath("/category/%d/feeds", categoryID))
 }

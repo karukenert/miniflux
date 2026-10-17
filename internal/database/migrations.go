@@ -5,6 +5,7 @@ package database // import "miniflux.app/v2/internal/database"
 
 import (
 	"database/sql"
+	"errors"
 
 	"miniflux.app/v2/internal/crypto"
 )
@@ -20,7 +21,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			);
 
 			CREATE TABLE users (
-				id serial not null,
+				id SERIAL,
 				username text not null unique,
 				password text,
 				is_admin bool default 'f',
@@ -32,7 +33,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			);
 
 			CREATE TABLE sessions (
-				id serial not null,
+				id SERIAL,
 				user_id int not null,
 				token text not null unique,
 				created_at timestamp with time zone default now(),
@@ -44,7 +45,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			);
 
 			CREATE TABLE categories (
-				id serial not null,
+				id SERIAL,
 				user_id int not null,
 				title text not null,
 				primary key (id),
@@ -53,7 +54,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			);
 
 			CREATE TABLE feeds (
-				id bigserial not null,
+				id BIGSERIAL,
 				user_id int not null,
 				category_id int not null,
 				title text not null,
@@ -73,7 +74,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			CREATE TYPE entry_status as enum('unread', 'read', 'removed');
 
 			CREATE TABLE entries (
-				id bigserial not null,
+				id BIGSERIAL,
 				user_id int not null,
 				feed_id bigint not null,
 				hash text not null,
@@ -92,7 +93,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			CREATE INDEX entries_feed_idx on entries using btree(feed_id);
 
 			CREATE TABLE enclosures (
-				id bigserial not null,
+				id BIGSERIAL,
 				user_id int not null,
 				entry_id bigint not null,
 				url text not null,
@@ -104,7 +105,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			);
 
 			CREATE TABLE icons (
-				id bigserial not null,
+				id BIGSERIAL,
 				hash text not null unique,
 				mime_type text not null,
 				content bytea not null,
@@ -123,13 +124,9 @@ var migrations = [...]func(tx *sql.Tx) error{
 		return err
 	},
 	func(tx *sql.Tx) (err error) {
-		sql := `
-			CREATE EXTENSION IF NOT EXISTS hstore;
-			ALTER TABLE users ADD COLUMN extra hstore;
-			CREATE INDEX users_extra_idx ON users using gin(extra);
-			`
-		_, err = tx.Exec(sql)
-		return err
+		// This used to create a HSTORE `extra` column in the table `users`,
+		// which hasn't been used since Miniflux 2.0.27.
+		return nil
 	},
 	func(tx *sql.Tx) (err error) {
 		sql := `
@@ -334,7 +331,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 	func(tx *sql.Tx) (err error) {
 		sql := `
 			CREATE TABLE api_keys (
-				id serial not null,
+				id SERIAL,
 				user_id int not null references users(id) on delete cascade,
 				token text not null unique,
 				description text not null,
@@ -356,7 +353,11 @@ var migrations = [...]func(tx *sql.Tx) error{
 		return err
 	},
 	func(tx *sql.Tx) (err error) {
-		sql := `CREATE INDEX enclosures_user_entry_url_idx ON enclosures(user_id, entry_id, md5(url))`
+		// This migration originally used md5(url), but it was changed to
+		// sha256 because PostgreSQL 18 disables MD5 in FIPS mode, which made
+		// fresh installs fail while replaying this migration. Existing
+		// installs that already ran it are migrated later on.
+		sql := `CREATE INDEX enclosures_user_entry_url_idx ON enclosures(user_id, entry_id, encode(sha256(url::bytea), 'hex'))`
 		_, err = tx.Exec(sql)
 		return err
 	},
@@ -436,6 +437,18 @@ var migrations = [...]func(tx *sql.Tx) error{
 		return err
 	},
 	func(tx *sql.Tx) (err error) {
+
+		hasExtra := false
+		if err := tx.QueryRow(`
+			SELECT true
+			FROM information_schema.columns
+			WHERE
+				table_name='users' AND
+				column_name='extra';
+			`).Scan(&hasExtra); err != nil && err != sql.ErrNoRows {
+			return err
+		}
+
 		_, err = tx.Exec(`
 			ALTER TABLE users
 				ADD column stylesheet text not null default '',
@@ -444,6 +457,11 @@ var migrations = [...]func(tx *sql.Tx) error{
 		`)
 		if err != nil {
 			return err
+		}
+
+		if !hasExtra {
+			// No need to migrate things from the `extra` column if it's not present
+			return nil
 		}
 
 		_, err = tx.Exec(`
@@ -470,7 +488,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			)
 
 			if err := tx.QueryRow(`FETCH NEXT FROM my_cursor`).Scan(&userID, &customStylesheet, &googleID, &oidcID); err != nil {
-				if err == sql.ErrNoRows {
+				if errors.Is(err, sql.ErrNoRows) {
 					break
 				}
 				return err
@@ -495,7 +513,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 		return err
 	},
 	func(tx *sql.Tx) (err error) {
-		if _, err = tx.Exec(`ALTER TABLE users DROP COLUMN extra;`); err != nil {
+		if _, err = tx.Exec(`ALTER TABLE users DROP COLUMN IF EXISTS extra;`); err != nil {
 			return err
 		}
 		_, err = tx.Exec(`
@@ -710,7 +728,12 @@ var migrations = [...]func(tx *sql.Tx) error{
 		}
 
 		// Create unique index
-		_, err = tx.Exec(`CREATE UNIQUE INDEX enclosures_user_entry_url_unique_idx ON enclosures(user_id, entry_id, md5(url))`)
+		//
+		// This originally used md5(url), but it was changed to sha256 because
+		// PostgreSQL 18 disables MD5 in FIPS mode, which made fresh installs
+		// fail while replaying this migration. Existing installs that already
+		// ran it are migrated later on.
+		_, err = tx.Exec(`CREATE UNIQUE INDEX enclosures_user_entry_url_unique_idx ON enclosures(user_id, entry_id, encode(sha256(url::bytea), 'hex'))`)
 		if err != nil {
 			return err
 		}
@@ -1068,7 +1091,7 @@ var migrations = [...]func(tx *sql.Tx) error{
 			var id int64
 
 			if err := tx.QueryRow(`FETCH NEXT FROM id_cursor`).Scan(&id); err != nil {
-				if err == sql.ErrNoRows {
+				if errors.Is(err, sql.ErrNoRows) {
 					break
 				}
 				return err
@@ -1343,16 +1366,225 @@ var migrations = [...]func(tx *sql.Tx) error{
 	},
 	func(tx *sql.Tx) (err error) {
 		sql := `
-			ALTER TABLE feeds ALTER COLUMN category_id DROP NOT NULL;
+			ALTER TABLE integrations ADD COLUMN archiveorg_enabled bool default 'f'
+		`
+		_, err = tx.Exec(sql)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		sql := `DROP EXTENSION IF EXISTS hstore;`
+		_, err = tx.Exec(sql)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		sql := `
+			ALTER TABLE integrations ADD COLUMN karakeep_tags text default '';
 		`
 		_, err = tx.Exec(sql)
 		return err
 	},
 	func(tx *sql.Tx) (err error) {
 		sql := `
-			ALTER TABLE feeds ADD COLUMN manual bool NOT NULL DEFAULT false;
+			ALTER TABLE integrations ADD COLUMN linkwarden_collection_id int;
 		`
 		_, err = tx.Exec(sql)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		sql := `
+			ALTER TABLE integrations ADD COLUMN readeck_push_enabled bool default 'f';
+		`
+		_, err = tx.Exec(sql)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		// There is no need to keep an index on the content of deleted entries.
+		_, err = tx.Exec(`DROP INDEX document_vectors_idx;`)
+		if err != nil {
+			return err
+		}
+
+		sql := `
+			CREATE INDEX document_vectors_idx
+				ON entries
+				USING gin(document_vectors)
+				WHERE status != 'removed';
+		`
+		_, err = tx.Exec(sql)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`UPDATE user_sessions SET ip = '127.0.0.1'::inet WHERE ip IS NULL`)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`UPDATE user_sessions SET created_at = now() WHERE created_at IS NULL`)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`UPDATE user_sessions SET user_agent = '' WHERE user_agent IS NULL`)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
+			ALTER TABLE user_sessions
+				ALTER COLUMN ip SET DEFAULT '127.0.0.1'::inet,
+				ALTER COLUMN ip SET NOT NULL,
+				ALTER COLUMN created_at SET DEFAULT now(),
+				ALTER COLUMN created_at SET NOT NULL,
+				ALTER COLUMN user_agent SET DEFAULT '',
+				ALTER COLUMN user_agent SET NOT NULL
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`ALTER TABLE feeds ADD COLUMN ignore_entry_updates bool default 'f'`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			DROP TABLE IF EXISTS sessions;
+			DROP TABLE IF EXISTS user_sessions;
+
+			CREATE TABLE web_sessions (
+				id text not null,
+				secret_hash bytea not null,
+				user_id int references users(id) on delete cascade,
+				created_at timestamp with time zone not null default now(),
+				user_agent text not null default '',
+				ip inet,
+				state jsonb not null default '{}'::jsonb,
+				primary key (id),
+				check (jsonb_typeof(state) = 'object')
+			);
+
+			CREATE INDEX web_sessions_user_id_idx
+				ON web_sessions (user_id)
+				WHERE user_id IS NOT NULL;
+
+			CREATE INDEX web_sessions_created_at_idx
+				ON web_sessions (created_at);
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			CREATE TABLE entry_tombstones (
+				feed_id bigint not null references feeds(id) on delete cascade,
+				hash text not null check (hash <> ''),
+				deleted_at timestamp with time zone not null default now(),
+				primary key (feed_id, hash)
+			);
+
+			CREATE INDEX entry_tombstones_deleted_at_idx
+				ON entry_tombstones (deleted_at);
+
+			-- Some databases contain orphaned entries whose feed is gone,
+			-- e.g. restored from a dump without foreign key enforcement.
+			-- Skip them: their tombstones would be useless anyway, and the
+			-- rows are deleted just below.
+			INSERT INTO entry_tombstones (feed_id, hash, deleted_at)
+				SELECT feed_id, hash, changed_at
+				FROM entries
+				WHERE status = 'removed' AND hash <> ''
+					AND feed_id IN (SELECT id FROM feeds)
+				ON CONFLICT (feed_id, hash) DO NOTHING;
+
+			DELETE FROM entries WHERE status = 'removed';
+
+			-- The "removed" status is no longer used, so drop the partial
+			-- predicate so the planner can use the index for every search.
+			DROP INDEX document_vectors_idx;
+			CREATE INDEX document_vectors_idx
+				ON entries
+				USING gin(document_vectors);
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			DELETE FROM integrations WHERE user_id NOT IN (SELECT id FROM users);
+
+			ALTER TABLE integrations
+				ADD CONSTRAINT integrations_user_id_fkey
+				FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		// backup_eligible is nullable: NULL marks pre-migration rows so the login path can backfill it from the assertion on first use.
+		_, err = tx.Exec(`
+			UPDATE webauthn_credentials SET name = '' WHERE name IS NULL;
+
+			ALTER TABLE webauthn_credentials
+				ALTER COLUMN name SET DEFAULT '',
+				ALTER COLUMN name SET NOT NULL,
+				ADD COLUMN backup_eligible boolean,
+				ADD COLUMN backup_state boolean NOT NULL DEFAULT false;
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		// entries_feed_idx is redundant: the unique constraint
+		// entries_feed_id_hash_key(feed_id, hash) and the explicit
+		// entries_feed_id_status_hash_idx(feed_id, status, hash) both
+		// cover feed_id-leading lookups, including FK cascade deletes.
+		//
+		// entries_user_status_idx is redundant: five three-column indexes
+		// share the same (user_id, status) prefix and serve every query
+		// that the two-column index could.
+		_, err = tx.Exec(`
+			DROP INDEX IF EXISTS entries_feed_idx;
+			DROP INDEX IF EXISTS entries_user_status_idx;
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		// PostgreSQL 18 disables MD5 when running in FIPS mode, which makes
+		// the unique index on enclosures relying on md5(url) unusable.
+		// Replace it with a SHA-256 based expression index.
+		_, err = tx.Exec(`
+			DROP INDEX IF EXISTS enclosures_user_entry_url_unique_idx;
+			CREATE UNIQUE INDEX enclosures_user_entry_url_unique_idx
+				ON enclosures (user_id, entry_id, encode(sha256(url::bytea), 'hex'));
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`
+			ALTER TABLE feeds ADD COLUMN language text not null default '';
+			ALTER TABLE entries ADD COLUMN language text not null default '';
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		// entries_user_status_changed_idx(user_id, status, changed_at) is
+		// redundant: it is a strict prefix of
+		// entries_user_status_changed_published_idx(user_id, status,
+		// changed_at, published_at), which serves every query the shorter
+		// index could (including the history page and changed_at pagination).
+		_, err = tx.Exec(`
+			DROP INDEX IF EXISTS entries_user_status_changed_idx;
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		// Index the raw SHA-256 digest (32 bytes) instead of its hex text
+		// encoding (64 bytes) to roughly halve this index on disk. The
+		// ON CONFLICT clause in createEnclosure uses the same expression.
+		_, err = tx.Exec(`
+			DROP INDEX IF EXISTS enclosures_user_entry_url_unique_idx;
+			CREATE UNIQUE INDEX enclosures_user_entry_url_unique_idx
+				ON enclosures (user_id, entry_id, sha256(url::bytea));
+		`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`ALTER TABLE feeds ALTER COLUMN category_id DROP NOT NULL;`)
+		return err
+	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`ALTER TABLE feeds ADD COLUMN manual bool NOT NULL DEFAULT false;`)
 		return err
 	},
 }

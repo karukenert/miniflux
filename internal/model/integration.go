@@ -68,6 +68,7 @@ type Integration struct {
 	LinkwardenEnabled                bool
 	LinkwardenURL                    string
 	LinkwardenAPIKey                 string
+	LinkwardenCollectionID           *int64
 	MatrixBotEnabled                 bool
 	MatrixBotUser                    string
 	MatrixBotPassword                string
@@ -77,6 +78,7 @@ type Integration struct {
 	AppriseURL                       string
 	AppriseServicesURL               string
 	ReadeckEnabled                   bool
+	ReadeckPushEnabled               bool
 	ReadeckURL                       string
 	ReadeckAPIKey                    string
 	ReadeckLabels                    string
@@ -100,6 +102,7 @@ type Integration struct {
 	KarakeepEnabled                  bool
 	KarakeepAPIKey                   string
 	KarakeepURL                      string
+	KarakeepTags                     string
 	RaindropEnabled                  bool
 	RaindropToken                    string
 	RaindropCollectionID             string
@@ -123,4 +126,5 @@ type Integration struct {
 	PushoverToken                    string
 	PushoverDevice                   string
 	PushoverPrefix                   string
+	ArchiveorgEnabled                bool
 }

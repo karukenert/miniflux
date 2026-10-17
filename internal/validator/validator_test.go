@@ -6,23 +6,8 @@ package validator // import "miniflux.app/v2/internal/validator"
 import (
 	"testing"
 
-	"miniflux.app/v2/internal/locale"
+	"miniflux.app/v2/internal/model"
 )
-
-func TestIsValidURL(t *testing.T) {
-	scenarios := map[string]bool{
-		"https://www.example.org": true,
-		"http://www.example.org/": true,
-		"www.example.org":         false,
-	}
-
-	for link, expected := range scenarios {
-		result := IsValidURL(link)
-		if result != expected {
-			t.Errorf(`Unexpected result, got %v instead of %v`, result, expected)
-		}
-	}
-}
 
 func TestValidateRange(t *testing.T) {
 	if err := ValidateRange(-1, 0); err == nil {
@@ -33,8 +18,16 @@ func TestValidateRange(t *testing.T) {
 		t.Error(`An invalid limit should generate a error`)
 	}
 
+	if err := ValidateRange(0, model.MaxEntryLimit+1); err == nil {
+		t.Error(`A limit above MaxEntryLimit should generate an error`)
+	}
+
 	if err := ValidateRange(42, 42); err != nil {
 		t.Error(`A valid offset and limit should not generate any error`)
+	}
+
+	if err := ValidateRange(0, model.MaxEntryLimit); err != nil {
+		t.Error(`A limit equal to MaxEntryLimit should not generate an error`)
 	}
 }
 
@@ -82,24 +75,19 @@ func TestIsValidDomain(t *testing.T) {
 	}
 }
 
-func TestValidateUsername(t *testing.T) {
-	scenarios := map[string]*locale.LocalizedError{
-		"jvoisin":          nil,
-		"j.voisin":         nil,
-		"j@vois.in":        nil,
-		"invalid username": locale.NewLocalizedError("error.invalid_username"),
+func TestIsValidDomainList(t *testing.T) {
+	scenarios := map[string]bool{
+		"example.org":                 true,
+		"example.org example.com":     true,
+		"example.org invalid..domain": false,
+		"example.org example.com:443": false,
+		"":                            false,
 	}
 
-	for username, expected := range scenarios {
-		result := validateUsername(username)
-		if expected == nil {
-			if result != nil {
-				t.Errorf(`got an unexpected error for %q instead of nil: %v`, username, result)
-			}
-		} else {
-			if result == nil {
-				t.Errorf(`expected an error, got nil.`)
-			}
+	for domains, expected := range scenarios {
+		result := IsValidDomainList(domains)
+		if result != expected {
+			t.Errorf(`Unexpected result for %q, got %v instead of %v`, domains, result, expected)
 		}
 	}
 }

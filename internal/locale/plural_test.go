@@ -14,8 +14,8 @@ func TestPluralRules(t *testing.T) {
 			2: 1, // n > 1
 			5: 1, // n > 1
 		},
-		// Arabic (ar_AR) - 6 forms
-		"ar_AR": {
+		// Arabic (ar_SA) - 6 forms
+		"ar_SA": {
 			0:   0, // n == 0
 			1:   1, // n == 1
 			2:   2, // n == 2
@@ -44,6 +44,13 @@ func TestPluralRules(t *testing.T) {
 			2: 1, // n > 1
 			5: 1, // n > 1
 		},
+		// Galician (gl_ES) - n != 1
+		"gl_ES": {
+			0: 1, // n != 1
+			1: 0, // n == 1
+			2: 1, // n != 1
+			5: 1, // n != 1
+		},
 		// Indonesian (id_ID) - always form 0
 		"id_ID": {
 			0:   0,
@@ -53,6 +60,14 @@ func TestPluralRules(t *testing.T) {
 		},
 		// Japanese (ja_JP) - always form 0
 		"ja_JP": {
+			0:   0,
+			1:   0,
+			2:   0,
+			5:   0,
+			100: 0,
+		},
+		// Korean (ko_KR) - always form 0
+		"ko_KR": {
 			0:   0,
 			1:   0,
 			2:   0,

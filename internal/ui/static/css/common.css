@@ -82,6 +82,18 @@ a:hover {
     translate: -50% 0;
 }
 
+/* Smoother pages transition */
+@media not all and (prefers-reduced-motion: reduce) {
+    @view-transition {
+        navigation: auto;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+  @view-transition {
+    navigation: none;
+  }
+}
+
 /* Header and main menu */
 .header {
     margin-top: 10px;
@@ -120,16 +132,27 @@ a:hover {
     border-bottom: 1px dotted var(--header-list-border-color);
 }
 
-.header li a:hover {
+.header li :is(a, .logout-button):hover {
     color: #888;
 }
 
-.header :is(a, summary) {
+.header :is(a, summary, .logout-button) {
     font-size: 0.9em;
     color: var(--header-link-color);
     text-decoration: none;
     border: none;
     font-weight: 400;
+}
+
+.header .logout-form {
+    display: inline;
+}
+
+.header .logout-button {
+    background: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
 }
 
 .header .active a {
@@ -450,6 +473,38 @@ input[type="checkbox"] {
     margin-bottom: 10px;
 }
 
+.search-form {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.search-input-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.search-input-row input[type="search"] {
+    margin: 0;
+}
+
+.search-input-row .button {
+    margin: 0;
+}
+
+.search-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+}
+
+.search-filter input[type="checkbox"] {
+    margin: 0;
+}
+
 textarea {
     width: 350px;
     color: var(--input-color);
@@ -471,6 +526,31 @@ textarea:focus {
 input::placeholder {
     color: var(--input-placeholder-color);
     padding-top: 2px;
+}
+
+/* Rule editor fields (scraper, content/URL rewrite, block/keep filters) are
+   essentially code, so render them monospaced and the same width as the filter
+   textareas. */
+input.code-input,
+textarea.code-input {
+    width: 350px;
+    max-width: 100%;
+    font-family: ui-monospace, Consolas, monospace;
+    /* Match the page's base text size; a bare <textarea> otherwise falls back to
+       the small UA monospace default. */
+    font-size: 1rem;
+}
+
+textarea.code-input {
+    resize: both;
+}
+
+/* Short, usually single-line rules: start compact and grow to fit their
+   content. field-sizing is ignored by older browsers, which fall back to the
+   rows attribute. */
+textarea.code-input-autogrow {
+    field-sizing: content;
+    min-height: 3.4em;
 }
 
 .form-label-row {
@@ -619,22 +699,11 @@ template {
     display: none;
 }
 
-#modal-left {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 380px;
-    overflow: auto;
-    color: var(--modal-color);
-    background: var(--modal-background);
-    box-shadow: var(--modal-box-shadow);
-    padding: 30px 5px 5px;
-}
-
-#modal-left h3 {
-    font-weight: 400;
-    margin: 0;
+dialog {
+    max-height: none;
+    height: 100vh;
+    border: none;
+    padding: 1%;
 }
 
 .btn-close-modal {
@@ -784,6 +853,12 @@ template {
     overflow: hidden;
 }
 
+.entry-item,
+.feed-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 100px;
+}
+
 .item.current-item {
     border: var(--current-item-border-width) solid var(--current-item-border-color);
     padding: 3px;
@@ -866,13 +941,17 @@ template {
     margin-right: 0;
 }
 
-.item-meta-icons li > :is(a, button) {
+.item-meta-icons li :is(a, button) {
     color: #777;
     text-decoration: none;
     font-size: 0.8rem;
     border: none;
     background-color: transparent;
     cursor: pointer;
+}
+
+.item-meta-icons li form {
+    display: contents;
 }
 
 .item-meta-icons a span {
@@ -1058,10 +1137,20 @@ article.category-has-unread {
     margin-bottom: 10px;
 }
 
+.entry-content h1,
+.entry-content h2,
+.entry-content h3 {
+    line-height: 1.2;
+}
+
 .entry-content iframe,
 .entry-content video,
 .entry-content img {
     max-width: 100%;
+}
+
+.entry-content iframe {
+    display: block;
 }
 
 .entry-content img {
@@ -1236,6 +1325,7 @@ details.entry-enclosures {
     font-size: 0.8em;
     margin-top: 10px;
     margin-bottom: 10px;
+    word-wrap: break-word;
 }
 
 /* Confirmation */

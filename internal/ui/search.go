@@ -7,60 +7,59 @@ import (
 	"net/http"
 
 	"miniflux.app/v2/internal/http/request"
-	"miniflux.app/v2/internal/http/response/html"
-	"miniflux.app/v2/internal/http/route"
+	"miniflux.app/v2/internal/http/response"
 	"miniflux.app/v2/internal/model"
-	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
 
 func (h *handler) showSearchPage(w http.ResponseWriter, r *http.Request) {
 	user, err := h.store.UserByID(request.UserID(r))
 	if err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
 
 	searchQuery := request.QueryStringParam(r, "q", "")
+	unreadOnly := request.QueryBoolParam(r, "unread", false)
 	offset := request.QueryIntParam(r, "offset", 0)
 
 	var entries model.Entries
 	var entriesCount int
 
 	if searchQuery != "" {
-		builder := h.store.NewEntryQueryBuilder(user.ID)
-		builder.WithSearchQuery(searchQuery)
-		builder.WithoutStatus(model.EntryStatusRemoved)
-		builder.WithOffset(offset)
-		builder.WithLimit(user.EntriesPerPage)
+		builder := h.store.NewEntryQueryBuilder(user.ID).
+			WithSearchQuery(searchQuery).
+			WithoutContent().
+			WithOffset(offset).
+			WithLimit(user.EntriesPerPage)
 
-		entries, err = builder.GetEntries()
-		if err != nil {
-			html.ServerError(w, r, err)
-			return
+		if unreadOnly {
+			builder = builder.WithStatuses(model.EntryStatusUnread)
 		}
 
-		entriesCount, err = builder.CountEntries()
+		entries, entriesCount, err = builder.GetEntriesWithCount()
 		if err != nil {
-			html.ServerError(w, r, err)
+			response.HTMLServerError(w, r, err)
 			return
 		}
 	}
 
-	sess := session.New(h.store, request.SessionID(r))
-	view := view.New(h.tpl, r, sess)
-	pagination := getPagination(route.Path(h.router, "search"), entriesCount, offset, user.EntriesPerPage)
+	view := view.New(h.tpl, r)
+	pagination := getPagination(h.routePath("/search"), entriesCount, offset, user.EntriesPerPage)
 	pagination.SearchQuery = searchQuery
+	pagination.UnreadOnly = unreadOnly
 
 	view.Set("searchQuery", searchQuery)
+	view.Set("searchUnreadOnly", unreadOnly)
 	view.Set("entries", entries)
 	view.Set("total", entriesCount)
 	view.Set("pagination", pagination)
 	view.Set("menu", "search")
 	view.Set("user", user)
-	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
-	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
-	view.Set("hasSaveEntry", h.store.HasSaveEntry(user.ID))
+	navMetadata, _ := h.store.GetNavMetadata(user.ID)
+	view.Set("countUnread", navMetadata.CountUnread)
+	view.Set("countErrorFeeds", navMetadata.CountErrorFeeds)
+	view.Set("hasSaveEntry", navMetadata.HasSaveEntry)
 
-	html.OK(w, r, view.Render("search"))
+	response.HTML(w, r, view.Render("search"))
 }

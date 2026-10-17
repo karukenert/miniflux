@@ -4,7 +4,6 @@
 package cli // import "miniflux.app/v2/internal/cli"
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -30,9 +29,9 @@ const (
 	flagDebugModeHelp        = "Show debug logs"
 	flagConfigFileHelp       = "Load configuration file"
 	flagConfigDumpHelp       = "Print parsed configuration values"
-	flagHealthCheckHelp      = `Perform a health check on the given endpoint (the value "auto" try to guess the health check endpoint).`
+	flagHealthCheckHelp      = `Perform a health check on the given endpoint (the value "auto" tries to guess the health check endpoint).`
 	flagRefreshFeedsHelp     = "Refresh a batch of feeds and exit"
-	flagRunCleanupTasksHelp  = "Run cleanup tasks (delete old sessions and archives old entries)"
+	flagRunCleanupTasksHelp  = "Run cleanup tasks (delete old sessions and archive old entries)"
 	flagExportUserFeedsHelp  = "Export user feeds (provide the username as argument)"
 	flagResetNextCheckAtHelp = "Reset the next check time for all feeds"
 )
@@ -92,25 +91,22 @@ func Parse() {
 		printErrorAndExit(err)
 	}
 
-	if oauth2Provider := config.Opts.OAuth2Provider(); oauth2Provider != "" {
-		if oauth2Provider != "oidc" && oauth2Provider != "google" {
-			printErrorAndExit(fmt.Errorf(`unsupported OAuth2 provider: %q (Possible values are "google" or "oidc")`, oauth2Provider))
-		}
-	}
-
-	if config.Opts.DisableLocalAuth() {
-		switch {
-		case config.Opts.OAuth2Provider() == "" && config.Opts.AuthProxyHeader() == "":
-			printErrorAndExit(errors.New("DISABLE_LOCAL_AUTH is enabled but neither OAUTH2_PROVIDER nor AUTH_PROXY_HEADER is not set. Please enable at least one authentication source"))
-		case config.Opts.OAuth2Provider() != "" && !config.Opts.IsOAuth2UserCreationAllowed():
-			printErrorAndExit(errors.New("DISABLE_LOCAL_AUTH is enabled and an OAUTH2_PROVIDER is configured, but OAUTH2_USER_CREATION is not enabled"))
-		case config.Opts.AuthProxyHeader() != "" && !config.Opts.IsAuthProxyUserCreationAllowed():
-			printErrorAndExit(errors.New("DISABLE_LOCAL_AUTH is enabled and an AUTH_PROXY_HEADER is configured, but AUTH_PROXY_USER_CREATION is not enabled"))
-		}
+	if err := config.Opts.Validate(); err != nil {
+		printErrorAndExit(err)
 	}
 
 	if flagConfigDump {
 		fmt.Print(config.Opts)
+		return
+	}
+
+	if flagInfo {
+		info()
+		return
+	}
+
+	if flagVersion {
+		fmt.Println(version.Version)
 		return
 	}
 
@@ -128,7 +124,7 @@ func Parse() {
 	default:
 		logFileHandler, err = os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
-			printErrorAndExit(fmt.Errorf("unable to open log file: %v", err))
+			printfAndExit("unable to open log file: %v", err)
 		}
 		defer logFileHandler.(*os.File).Close()
 	}
@@ -142,30 +138,20 @@ func Parse() {
 		return
 	}
 
-	if flagInfo {
-		info()
-		return
-	}
-
-	if flagVersion {
-		fmt.Println(version.Version)
-		return
-	}
-
 	if config.Opts.IsDefaultDatabaseURL() {
 		slog.Info("The default value for DATABASE_URL is used")
 	}
 
 	if err := static.GenerateBinaryBundles(); err != nil {
-		printErrorAndExit(fmt.Errorf("unable to generate binary files bundle: %v", err))
+		printfAndExit("unable to generate binary files bundle: %v", err)
 	}
 
 	if err := static.GenerateStylesheetsBundles(); err != nil {
-		printErrorAndExit(fmt.Errorf("unable to generate stylesheets bundle: %v", err))
+		printfAndExit("unable to generate stylesheets bundle: %v", err)
 	}
 
 	if err := static.GenerateJavascriptBundles(config.Opts.WebAuthn()); err != nil {
-		printErrorAndExit(fmt.Errorf("unable to generate javascript bundle: %v", err))
+		printfAndExit("unable to generate javascript bundle: %v", err)
 	}
 
 	db, err := database.NewConnectionPool(
@@ -175,7 +161,7 @@ func Parse() {
 		config.Opts.DatabaseConnectionLifetime(),
 	)
 	if err != nil {
-		printErrorAndExit(fmt.Errorf("unable to connect to database: %v", err))
+		printfAndExit("unable to connect to database: %v", err)
 	}
 	defer db.Close()
 
@@ -245,7 +231,7 @@ func Parse() {
 		slog.Info("Initializing proxy rotation", slog.Int("proxies_count", len(config.Opts.HTTPClientProxies())))
 		proxyrotator.ProxyRotatorInstance, err = proxyrotator.NewProxyRotator(config.Opts.HTTPClientProxies())
 		if err != nil {
-			printErrorAndExit(fmt.Errorf("unable to initialize proxy rotator: %v", err))
+			printfAndExit("unable to initialize proxy rotator: %v", err)
 		}
 	}
 
@@ -265,4 +251,9 @@ func Parse() {
 func printErrorAndExit(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
+}
+
+func printfAndExit(format string, args ...any) {
+	err := fmt.Errorf(format, args...)
+	printErrorAndExit(err)
 }

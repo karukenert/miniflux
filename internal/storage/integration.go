@@ -5,6 +5,7 @@ package storage // import "miniflux.app/v2/internal/storage"
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
@@ -43,7 +44,7 @@ func (s *Storage) UserByFeverToken(token string) (*model.User, error) {
 	var user model.User
 	err := s.db.QueryRow(query, token).Scan(&user.ID, &user.Username, &user.IsAdmin, &user.Timezone)
 	switch {
-	case err == sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf("store: unable to fetch user: %v", err)
@@ -62,11 +63,11 @@ func (s *Storage) GoogleReaderUserCheckPassword(username, password string) error
 		FROM
 			integrations
 		WHERE
-			integrations.googlereader_enabled='t' AND integrations.googlereader_username=$1
+			integrations.googlereader_enabled='t' AND integrations.googlereader_username=$1 AND integrations.googlereader_password <> ''
 	`
 
 	err := s.db.QueryRow(query, username).Scan(&hash)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf(`store: unable to find this user: %s`, username)
 	} else if err != nil {
 		return fmt.Errorf(`store: unable to fetch user: %v`, err)
@@ -92,11 +93,11 @@ func (s *Storage) GoogleReaderUserGetIntegration(username string) (*model.Integr
 		FROM
 			integrations
 		WHERE
-			integrations.googlereader_enabled='t' AND integrations.googlereader_username=$1
+			integrations.googlereader_enabled='t' AND integrations.googlereader_username=$1 AND integrations.googlereader_password <> ''
 	`
 
 	err := s.db.QueryRow(query, username).Scan(&integration.UserID, &integration.GoogleReaderEnabled, &integration.GoogleReaderUsername, &integration.GoogleReaderPassword)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return &integration, fmt.Errorf(`store: unable to find this user: %s`, username)
 	} else if err != nil {
 		return &integration, fmt.Errorf(`store: unable to fetch user: %v`, err)
@@ -164,6 +165,7 @@ func (s *Storage) Integration(userID int64) (*model.Integration, error) {
 			linkwarden_enabled,
 			linkwarden_url,
 			linkwarden_api_key,
+			linkwarden_collection_id,
 			matrix_bot_enabled,
 			matrix_bot_user,
 			matrix_bot_password,
@@ -177,6 +179,7 @@ func (s *Storage) Integration(userID int64) (*model.Integration, error) {
 			readeck_api_key,
 			readeck_labels,
 			readeck_only_url,
+			readeck_push_enabled,
 			shiori_enabled,
 			shiori_url,
 			shiori_username,
@@ -222,11 +225,13 @@ func (s *Storage) Integration(userID int64) (*model.Integration, error) {
 			karakeep_enabled,
 			karakeep_api_key,
 			karakeep_url,
+			karakeep_tags,
 			linktaco_enabled,
 			linktaco_api_token,
 			linktaco_org_slug,
 			linktaco_tags,
-			linktaco_visibility
+			linktaco_visibility,
+			archiveorg_enabled
 		FROM
 			integrations
 		WHERE
@@ -289,6 +294,7 @@ func (s *Storage) Integration(userID int64) (*model.Integration, error) {
 		&integration.LinkwardenEnabled,
 		&integration.LinkwardenURL,
 		&integration.LinkwardenAPIKey,
+		&integration.LinkwardenCollectionID,
 		&integration.MatrixBotEnabled,
 		&integration.MatrixBotUser,
 		&integration.MatrixBotPassword,
@@ -302,6 +308,7 @@ func (s *Storage) Integration(userID int64) (*model.Integration, error) {
 		&integration.ReadeckAPIKey,
 		&integration.ReadeckLabels,
 		&integration.ReadeckOnlyURL,
+		&integration.ReadeckPushEnabled,
 		&integration.ShioriEnabled,
 		&integration.ShioriURL,
 		&integration.ShioriUsername,
@@ -347,14 +354,16 @@ func (s *Storage) Integration(userID int64) (*model.Integration, error) {
 		&integration.KarakeepEnabled,
 		&integration.KarakeepAPIKey,
 		&integration.KarakeepURL,
+		&integration.KarakeepTags,
 		&integration.LinktacoEnabled,
 		&integration.LinktacoAPIToken,
 		&integration.LinktacoOrgSlug,
 		&integration.LinktacoTags,
 		&integration.LinktacoVisibility,
+		&integration.ArchiveorgEnabled,
 	)
 	switch {
-	case err == sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		return &integration, nil
 	case err != nil:
 		return &integration, fmt.Errorf(`store: unable to fetch integration row: %v`, err)
@@ -481,13 +490,17 @@ func (s *Storage) UpdateIntegration(integration *model.Integration) error {
 			karakeep_enabled=$110,
 			karakeep_api_key=$111,
 			karakeep_url=$112,
-			linktaco_enabled=$113,
-			linktaco_api_token=$114,
-			linktaco_org_slug=$115,
-			linktaco_tags=$116,
-			linktaco_visibility=$117
+			karakeep_tags=$113,
+			linktaco_enabled=$114,
+			linktaco_api_token=$115,
+			linktaco_org_slug=$116,
+			linktaco_tags=$117,
+			linktaco_visibility=$118,
+			archiveorg_enabled=$119,
+			linkwarden_collection_id=$120,
+			readeck_push_enabled=$121
 		WHERE
-			user_id=$118
+			user_id=$122
 	`
 	_, err := s.db.Exec(
 		query,
@@ -603,11 +616,15 @@ func (s *Storage) UpdateIntegration(integration *model.Integration) error {
 		integration.KarakeepEnabled,
 		integration.KarakeepAPIKey,
 		integration.KarakeepURL,
+		integration.KarakeepTags,
 		integration.LinktacoEnabled,
 		integration.LinktacoAPIToken,
 		integration.LinktacoOrgSlug,
 		integration.LinktacoTags,
 		integration.LinktacoVisibility,
+		integration.ArchiveorgEnabled,
+		integration.LinkwardenCollectionID,
+		integration.ReadeckPushEnabled,
 		integration.UserID,
 	)
 
@@ -651,7 +668,8 @@ func (s *Storage) HasSaveEntry(userID int64) (result bool) {
 				betula_enabled='t' OR
 				cubox_enabled='t' OR
 				discord_enabled='t' OR
-				slack_enabled='t'
+				slack_enabled='t' OR
+				archiveorg_enabled='t'
 			)
 	`
 	if err := s.db.QueryRow(query, userID).Scan(&result); err != nil {

@@ -10,9 +10,8 @@ import (
 
 // Entry statuses.
 const (
-	EntryStatusUnread  = "unread"
-	EntryStatusRead    = "read"
-	EntryStatusRemoved = "removed"
+	EntryStatusUnread = "unread"
+	EntryStatusRead   = "read"
 )
 
 // User represents a user in the system.
@@ -75,8 +74,6 @@ type UserModificationRequest struct {
 	EntryOrder                *string  `json:"entry_sorting_order"`
 	Stylesheet                *string  `json:"stylesheet"`
 	CustomJS                  *string  `json:"custom_js"`
-	GoogleID                  *string  `json:"google_id"`
-	OpenIDConnectID           *string  `json:"openid_connect_id"`
 	EntriesPerPage            *int     `json:"entries_per_page"`
 	KeyboardShortcuts         *bool    `json:"keyboard_shortcuts"`
 	ShowReadingTime           *bool    `json:"show_reading_time"`
@@ -149,12 +146,16 @@ type Feed struct {
 	FeedURL                     string    `json:"feed_url"`
 	SiteURL                     string    `json:"site_url"`
 	Title                       string    `json:"title"`
-	CheckedAt                   time.Time `json:"checked_at,omitempty"`
+	Description                 string    `json:"description"`
+	Language                    string    `json:"language"`
+	CheckedAt                   time.Time `json:"checked_at"`
+	NextCheckAt                 time.Time `json:"next_check_at"`
 	EtagHeader                  string    `json:"etag_header,omitempty"`
 	LastModifiedHeader          string    `json:"last_modified_header,omitempty"`
 	ParsingErrorMsg             string    `json:"parsing_error_message,omitempty"`
 	ParsingErrorCount           int       `json:"parsing_error_count,omitempty"`
 	Disabled                    bool      `json:"disabled"`
+	NoMediaPlayer               bool      `json:"no_media_player"`
 	IgnoreHTTPCache             bool      `json:"ignore_http_cache"`
 	AllowSelfSignedCertificates bool      `json:"allow_self_signed_certificates"`
 	FetchViaProxy               bool      `json:"fetch_via_proxy"`
@@ -166,6 +167,7 @@ type Feed struct {
 	BlockFilterEntryRules       string    `json:"block_filter_entry_rules"`
 	KeepFilterEntryRules        string    `json:"keep_filter_entry_rules"`
 	Crawler                     bool      `json:"crawler"`
+	IgnoreEntryUpdates          bool      `json:"ignore_entry_updates"`
 	UserAgent                   string    `json:"user_agent"`
 	Cookie                      string    `json:"cookie"`
 	Username                    string    `json:"username"`
@@ -174,6 +176,14 @@ type Feed struct {
 	HideGlobally                bool      `json:"hide_globally"`
 	DisableHTTP2                bool      `json:"disable_http2"`
 	ProxyURL                    string    `json:"proxy_url"`
+	AppriseServiceURLs          string    `json:"apprise_service_urls"`
+	WebhookURL                  string    `json:"webhook_url"`
+	NtfyEnabled                 bool      `json:"ntfy_enabled"`
+	NtfyPriority                int       `json:"ntfy_priority"`
+	NtfyTopic                   string    `json:"ntfy_topic"`
+	PushoverEnabled             bool      `json:"pushover_enabled"`
+	PushoverPriority            int       `json:"pushover_priority"`
+	Icon                        *FeedIcon `json:"icon"`
 }
 
 // FeedCreationRequest represents the request to create a feed.
@@ -185,7 +195,9 @@ type FeedCreationRequest struct {
 	Username                    string `json:"username"`
 	Password                    string `json:"password"`
 	Crawler                     bool   `json:"crawler"`
+	IgnoreEntryUpdates          bool   `json:"ignore_entry_updates"`
 	Disabled                    bool   `json:"disabled"`
+	NoMediaPlayer               bool   `json:"no_media_player"`
 	IgnoreHTTPCache             bool   `json:"ignore_http_cache"`
 	AllowSelfSignedCertificates bool   `json:"allow_self_signed_certificates"`
 	FetchViaProxy               bool   `json:"fetch_via_proxy"`
@@ -206,6 +218,7 @@ type FeedModificationRequest struct {
 	FeedURL                     *string `json:"feed_url"`
 	SiteURL                     *string `json:"site_url"`
 	Title                       *string `json:"title"`
+	Description                 *string `json:"description"`
 	ScraperRules                *string `json:"scraper_rules"`
 	RewriteRules                *string `json:"rewrite_rules"`
 	UrlRewriteRules             *string `json:"urlrewrite_rules"`
@@ -214,12 +227,14 @@ type FeedModificationRequest struct {
 	BlockFilterEntryRules       *string `json:"block_filter_entry_rules"`
 	KeepFilterEntryRules        *string `json:"keep_filter_entry_rules"`
 	Crawler                     *bool   `json:"crawler"`
+	IgnoreEntryUpdates          *bool   `json:"ignore_entry_updates"`
 	UserAgent                   *string `json:"user_agent"`
 	Cookie                      *string `json:"cookie"`
 	Username                    *string `json:"username"`
 	Password                    *string `json:"password"`
 	CategoryID                  *int64  `json:"category_id"`
 	Disabled                    *bool   `json:"disabled"`
+	NoMediaPlayer               *bool   `json:"no_media_player"`
 	IgnoreHTTPCache             *bool   `json:"ignore_http_cache"`
 	AllowSelfSignedCertificates *bool   `json:"allow_self_signed_certificates"`
 	FetchViaProxy               *bool   `json:"fetch_via_proxy"`
@@ -256,6 +271,7 @@ type Entry struct {
 	Title       string     `json:"title"`
 	Status      string     `json:"status"`
 	Content     string     `json:"content"`
+	Language    string     `json:"language"`
 	Author      string     `json:"author"`
 	ShareCode   string     `json:"share_code"`
 	Enclosures  Enclosures `json:"enclosures,omitempty"`
@@ -318,6 +334,7 @@ type Filter struct {
 	CategoryID      int64
 	FeedID          int64
 	Statuses        []string
+	Tags            []string
 	GloballyVisible bool
 }
 
@@ -325,6 +342,20 @@ type Filter struct {
 type EntryResultSet struct {
 	Total   int     `json:"total"`
 	Entries Entries `json:"entries"`
+}
+
+// EntryIDsFilter holds optional filter and pagination parameters for the entry IDs endpoint.
+type EntryIDsFilter struct {
+	Limit   int
+	Offset  int
+	Starred *bool
+	Status  string
+}
+
+// EntryIDsResultSet represents the response when fetching entry ID lists.
+type EntryIDsResultSet struct {
+	Total    int     `json:"total"`
+	EntryIDs []int64 `json:"entry_ids"`
 }
 
 // VersionResponse represents the version and the build information of the Miniflux instance.
@@ -356,6 +387,9 @@ type APIKeyCreationRequest struct {
 	Description string `json:"description"`
 }
 
+// SetOptionalField returns a pointer to the given value so optional request fields can be marked as set.
+//
+//go:fix inline
 func SetOptionalField[T any](value T) *T {
-	return &value
+	return new(value)
 }

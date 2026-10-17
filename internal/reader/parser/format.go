@@ -5,6 +5,7 @@ package parser // import "miniflux.app/v2/internal/reader/parser"
 
 import (
 	"encoding/xml"
+	"errors"
 	"io"
 	"unicode"
 
@@ -20,6 +21,8 @@ const (
 	FormatUnknown = "unknown"
 )
 
+const maxTokensToConsider = uint(50)
+
 // DetectFeedFormat tries to guess the feed format from input data.
 func DetectFeedFormat(r io.ReadSeeker) (string, string) {
 	r.Seek(0, io.SeekStart)
@@ -32,11 +35,13 @@ func DetectFeedFormat(r io.ReadSeeker) (string, string) {
 	r.Seek(0, io.SeekStart)
 	decoder := rxml.NewXMLDecoder(r)
 
+	processedTokens := uint(0)
 	for {
 		token, _ := decoder.Token()
-		if token == nil {
+		if token == nil || processedTokens == maxTokensToConsider {
 			break
 		}
+		processedTokens += 1
 
 		if element, ok := token.(xml.StartElement); ok {
 			switch element.Name.Local {
@@ -67,7 +72,7 @@ func detectJSONFormat(r io.ReadSeeker) (bool, error) {
 	for {
 		n, err := r.Read(buffer)
 		if n == 0 {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return false, nil // No non-whitespace content found
 			}
 			return false, err

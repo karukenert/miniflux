@@ -43,8 +43,8 @@ func fetchYouTubeWatchTimeForSingleEntry(websiteURL string) (int, error) {
 }
 
 func fetchYouTubeWatchTimeInBulk(entries []*model.Entry) {
-	var videosEntriesMapping = make(map[string]*model.Entry, len(entries))
-	var videoIDs []string
+	videosEntriesMapping := make(map[string]*model.Entry, len(entries))
+	videoIDs := make([]string, 0, len(entries))
 
 	for _, entry := range entries {
 		if !isYouTubeVideoURL(entry.URL) {
@@ -92,9 +92,9 @@ func fetchYouTubeWatchTimeFromApiInBulk(videoIDs []string) (map[string]time.Dura
 		RawQuery: apiQuery.Encode(),
 	}
 
-	requestBuilder := fetcher.NewRequestBuilder()
-	requestBuilder.WithTimeout(config.Opts.HTTPClientTimeout())
-	requestBuilder.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
+	requestBuilder := fetcher.NewRequestBuilder().
+		WithTimeout(config.Opts.HTTPClientTimeout()).
+		WithProxyRotator(proxyrotator.ProxyRotatorInstance)
 
 	responseHandler := fetcher.NewResponseHandler(requestBuilder.ExecuteRequest(apiURL.String()))
 	defer responseHandler.Close()
@@ -126,4 +126,11 @@ func fetchYouTubeWatchTimeFromApiInBulk(videoIDs []string) (map[string]time.Dura
 		watchTimeMap[video.ID] = duration
 	}
 	return watchTimeMap, nil
+}
+
+// FetchYouTubeWatchTimeInBulk sets the reading time of YouTube entries using the YouTube API, when configured.
+func FetchYouTubeWatchTimeInBulk(entries []*model.Entry) {
+	if shouldFetchYouTubeWatchTimeInBulk() {
+		fetchYouTubeWatchTimeInBulk(entries)
+	}
 }

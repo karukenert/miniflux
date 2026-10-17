@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"time"
 
@@ -40,12 +39,17 @@ func (l byStateAndName) Less(i, j int) bool {
 	return l.f[i].Title < l.f[j].Title
 }
 
-// FeedExists checks if the given feed exists.
-func (s *Storage) FeedExists(userID, feedID int64) bool {
+// FeedExists checks if the given feed exists. The returned error is
+// non-nil only for a genuine query/connection failure; a feed that doesn't
+// exist is reported as (false, nil), matching the underlying sql.ErrNoRows
+// case.
+func (s *Storage) FeedExists(userID, feedID int64) (bool, error) {
 	var result bool
 	query := `SELECT true FROM feeds WHERE user_id=$1 AND id=$2 LIMIT 1`
-	s.db.QueryRow(query, userID, feedID).Scan(&result)
-	return result
+	if err := s.db.QueryRow(query, userID, feedID).Scan(&result); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf(`store: unable to check if feed exists: %w`, err)
+	}
+	return result, nil
 }
 
 // CheckedAt returns when the feed was last checked.
@@ -59,20 +63,25 @@ func (s *Storage) CheckedAt(userID, feedID int64) (time.Time, error) {
 	return result, nil
 }
 
-// CategoryFeedExists returns true if the given feed exists that belongs to the given category.
-func (s *Storage) CategoryFeedExists(userID, categoryID, feedID int64) bool {
+// CategoryFeedExists returns true if the given feed exists and belongs to
+// the given category. A zero categoryID matches uncategorized feeds. The
+// returned error is non-nil only for a genuine query/connection failure; see
+// FeedExists above for the same convention.
+func (s *Storage) CategoryFeedExists(userID, categoryID, feedID int64) (bool, error) {
 	var cID *int64
 	if categoryID > 0 {
 		cID = &categoryID
 	}
 
 	var result bool
-	query := `SELECT true FROM feeds WHERE user_id=$1 AND category_id=$2 AND id=$3 LIMIT 1`
-	s.db.QueryRow(query, userID, cID, feedID).Scan(&result)
-	return result
+	query := `SELECT true FROM feeds WHERE user_id=$1 AND category_id IS NOT DISTINCT FROM $2 AND id=$3 LIMIT 1`
+	if err := s.db.QueryRow(query, userID, cID, feedID).Scan(&result); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf(`store: unable to check if feed exists in category: %w`, err)
+	}
+	return result, nil
 }
 
-// FeedURLExists checks if feed URL already exists.
+// FeedURLExists returns true if the given feed URL already exists for the user.
 func (s *Storage) FeedURLExists(userID int64, feedURL string) bool {
 	var result bool
 	query := `SELECT true FROM feeds WHERE user_id=$1 AND feed_url=$2 LIMIT 1`
@@ -80,7 +89,7 @@ func (s *Storage) FeedURLExists(userID int64, feedURL string) bool {
 	return result
 }
 
-// AnotherFeedURLExists checks if the user a duplicated feed.
+// AnotherFeedURLExists returns true if another feed with the same URL exists for the user.
 func (s *Storage) AnotherFeedURLExists(userID, feedID int64, feedURL string) bool {
 	var result bool
 	query := `SELECT true FROM feeds WHERE id <> $1 AND user_id=$2 AND feed_url=$3 LIMIT 1`
@@ -88,11 +97,11 @@ func (s *Storage) AnotherFeedURLExists(userID, feedID int64, feedURL string) boo
 	return result
 }
 
-// CountAllFeeds returns the number of feeds in the database.
-func (s *Storage) CountAllFeeds() map[string]int64 {
+// CountAllFeeds returns the number of feeds keyed by enabled, disabled, and total.
+func (s *Storage) CountAllFeeds() (map[string]int64, error) {
 	rows, err := s.db.Query(`SELECT disabled, count(*) FROM feeds GROUP BY disabled`)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("storage: unable to count feeds: %w", err)
 	}
 	defer rows.Close()
 
@@ -118,27 +127,11 @@ func (s *Storage) CountAllFeeds() map[string]int64 {
 	}
 
 	results["total"] = results["disabled"] + results["enabled"]
-	return results
-}
-
-// CountUserFeedsWithErrors returns the number of feeds with parsing errors that belong to the given user.
-func (s *Storage) CountUserFeedsWithErrors(userID int64) int {
-	pollingParsingErrorLimit := config.Opts.PollingParsingErrorLimit()
-	if pollingParsingErrorLimit <= 0 {
-		pollingParsingErrorLimit = 1
-	}
-	query := `SELECT count(*) FROM feeds WHERE user_id=$1 AND parsing_error_count >= $2`
-	var result int
-	err := s.db.QueryRow(query, userID, pollingParsingErrorLimit).Scan(&result)
-	if err != nil {
-		return 0
-	}
-
-	return result
+	return results, nil
 }
 
 // CountAllFeedsWithErrors returns the number of feeds with parsing errors.
-func (s *Storage) CountAllFeedsWithErrors() int {
+func (s *Storage) CountAllFeedsWithErrors() (int, error) {
 	pollingParsingErrorLimit := config.Opts.PollingParsingErrorLimit()
 	if pollingParsingErrorLimit <= 0 {
 		pollingParsingErrorLimit = 1
@@ -147,20 +140,20 @@ func (s *Storage) CountAllFeedsWithErrors() int {
 	var result int
 	err := s.db.QueryRow(query, pollingParsingErrorLimit).Scan(&result)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("storage: unable to count feeds with errors: %w", err)
 	}
 
-	return result
+	return result, nil
 }
 
-// Feeds returns all feeds that belongs to the given user.
+// Feeds returns all feeds that belong to the given user.
 func (s *Storage) Feeds(userID int64) (model.Feeds, error) {
-	builder := NewFeedQueryBuilder(s, userID)
-	builder.WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection)
-	return builder.GetFeeds()
+	return s.NewFeedQueryBuilder(userID).
+		WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection).
+		GetFeeds()
 }
 
-func getFeedsSorted(builder *FeedQueryBuilder) (model.Feeds, error) {
+func getFeedsSorted(builder *feedQueryBuilder) (model.Feeds, error) {
 	result, err := builder.GetFeeds()
 	if err == nil {
 		sort.Sort(byStateAndName{result})
@@ -169,29 +162,28 @@ func getFeedsSorted(builder *FeedQueryBuilder) (model.Feeds, error) {
 	return result, err
 }
 
-// FeedsWithCounters returns all feeds of the given user with counters of read and unread entries.
+// FeedsWithCounters returns all feeds of the given user with read and unread entry counters.
 func (s *Storage) FeedsWithCounters(userID int64) (model.Feeds, error) {
-	builder := NewFeedQueryBuilder(s, userID)
-	builder.WithCounters()
-	builder.WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection)
-	return getFeedsSorted(builder)
+	return getFeedsSorted(s.NewFeedQueryBuilder(userID).
+		WithCounters().
+		WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection))
 }
 
-// FetchCounters returns read and unread count.
+// FetchCounters returns the per-feed read and unread entry counts for the given user.
 func (s *Storage) FetchCounters(userID int64) (model.FeedCounters, error) {
-	builder := NewFeedQueryBuilder(s, userID)
-	builder.WithCounters()
-	reads, unreads, err := builder.fetchFeedCounter()
+	reads, unreads, err := s.NewFeedQueryBuilder(userID).
+		WithCounters().
+		fetchFeedCounter()
+
 	return model.FeedCounters{ReadCounters: reads, UnreadCounters: unreads}, err
 }
 
-// FeedsByCategoryWithCounters returns all feeds of the given user/category with counters of read and unread entries.
+// FeedsByCategoryWithCounters returns all feeds in the given category for the given user with read and unread entry counters.
 func (s *Storage) FeedsByCategoryWithCounters(userID, categoryID int64) (model.Feeds, error) {
-	builder := NewFeedQueryBuilder(s, userID)
-	builder.WithCategoryID(categoryID)
-	builder.WithCounters()
-	builder.WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection)
-	return getFeedsSorted(builder)
+	return getFeedsSorted(s.NewFeedQueryBuilder(userID).
+		WithCategoryID(categoryID).
+		WithCounters().
+		WithSorting(model.DefaultFeedSorting, model.DefaultFeedSortingDirection))
 }
 
 // WeeklyFeedEntryCount returns the weekly entry count for a feed.
@@ -226,11 +218,11 @@ func (s *Storage) WeeklyFeedEntryCount(userID, feedID int64) (int, error) {
 	return weeklyCount, nil
 }
 
-// FeedByID returns a feed by the ID.
+// FeedByID returns the feed with the given ID.
 func (s *Storage) FeedByID(userID, feedID int64) (*model.Feed, error) {
-	builder := NewFeedQueryBuilder(s, userID)
-	builder.WithFeedID(feedID)
-	feed, err := builder.GetFeed()
+	feed, err := s.NewFeedQueryBuilder(userID).
+		WithFeedID(feedID).
+		GetFeed()
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -276,10 +268,12 @@ func (s *Storage) CreateFeed(feed *model.Feed) error {
 			disable_http2,
 			description,
 			proxy_url,
+			ignore_entry_updates,
+			language,
 			manual
 		)
 		VALUES
-			($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+			($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
 		RETURNING
 			id
 	`
@@ -321,6 +315,8 @@ func (s *Storage) CreateFeed(feed *model.Feed) error {
 		feed.DisableHTTP2,
 		feed.Description,
 		feed.ProxyURL,
+		feed.IgnoreEntryUpdates,
+		feed.Language,
 		feed.Manual,
 	).Scan(&feed.ID)
 	if err != nil {
@@ -405,9 +401,11 @@ func (s *Storage) UpdateFeed(feed *model.Feed) (err error) {
 			pushover_enabled=$36,
 			pushover_priority=$37,
 			proxy_url=$38,
-			manual=$39
+			ignore_entry_updates=$39,
+			language=$40,
+			manual=$41
 		WHERE
-			id=$40 AND user_id=$41
+			id=$42 AND user_id=$43
 	`
 
 	var categoryID *int64
@@ -454,11 +452,12 @@ func (s *Storage) UpdateFeed(feed *model.Feed) (err error) {
 		feed.PushoverEnabled,
 		feed.PushoverPriority,
 		feed.ProxyURL,
+		feed.IgnoreEntryUpdates,
+		feed.Language,
 		feed.Manual,
 		feed.ID,
 		feed.UserID,
 	)
-
 	if err != nil {
 		return fmt.Errorf(`store: unable to update feed #%d (%s): %v`, feed.ID, feed.FeedURL, err)
 	}
@@ -466,7 +465,7 @@ func (s *Storage) UpdateFeed(feed *model.Feed) (err error) {
 	return nil
 }
 
-// UpdateFeedError updates feed errors.
+// UpdateFeedError persists the parsing error fields for the given feed.
 func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
 	query := `
 		UPDATE
@@ -487,7 +486,6 @@ func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
 		feed.ID,
 		feed.UserID,
 	)
-
 	if err != nil {
 		return fmt.Errorf(`store: unable to update feed error #%d (%s): %v`, feed.ID, feed.FeedURL, err)
 	}
@@ -495,45 +493,21 @@ func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
 	return nil
 }
 
-// RemoveFeed removes a feed and all entries.
-// This operation can takes time if the feed has lot of entries.
+// RemoveFeed removes the given feed along with its entries and enclosures.
 func (s *Storage) RemoveFeed(userID, feedID int64) error {
-	rows, err := s.db.Query(`SELECT id FROM entries WHERE user_id=$1 AND feed_id=$2`, userID, feedID)
-	if err != nil {
-		return fmt.Errorf(`store: unable to get user feed entries: %v`, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var entryID int64
-		if err := rows.Scan(&entryID); err != nil {
-			return fmt.Errorf(`store: unable to read user feed entry ID: %v`, err)
-		}
-
-		slog.Debug("Deleting entry",
-			slog.Int64("user_id", userID),
-			slog.Int64("feed_id", feedID),
-			slog.Int64("entry_id", entryID),
-		)
-
-		if _, err := s.db.Exec(`DELETE FROM entries WHERE id=$1 AND user_id=$2`, entryID, userID); err != nil {
-			return fmt.Errorf(`store: unable to delete user feed entries #%d: %v`, entryID, err)
-		}
-	}
-
 	if _, err := s.db.Exec(`DELETE FROM feeds WHERE id=$1 AND user_id=$2`, feedID, userID); err != nil {
 		return fmt.Errorf(`store: unable to delete feed #%d: %v`, feedID, err)
 	}
-
 	return nil
 }
 
-// ResetFeedErrors removes all feed errors.
+// ResetFeedErrors clears the parsing error fields for all feeds.
 func (s *Storage) ResetFeedErrors() error {
 	_, err := s.db.Exec(`UPDATE feeds SET parsing_error_count=0, parsing_error_msg=''`)
 	return err
 }
 
+// ResetNextCheckAt schedules all feeds to be checked immediately.
 func (s *Storage) ResetNextCheckAt() error {
 	_, err := s.db.Exec(`UPDATE feeds SET next_check_at=now()`)
 	return err

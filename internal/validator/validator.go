@@ -4,10 +4,12 @@
 package validator // import "miniflux.app/v2/internal/validator"
 
 import (
+	"errors"
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
+
+	"miniflux.app/v2/internal/model"
 )
 
 var domainRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$`)
@@ -15,11 +17,15 @@ var domainRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.
 // ValidateRange makes sure the offset/limit values are valid.
 func ValidateRange(offset, limit int) error {
 	if offset < 0 {
-		return fmt.Errorf(`offset value should be >= 0`)
+		return errors.New(`offset value should be >= 0`)
 	}
 
 	if limit < 0 {
-		return fmt.Errorf(`limit value should be >= 0`)
+		return errors.New(`limit value should be >= 0`)
+	}
+
+	if limit > model.MaxEntryLimit {
+		return fmt.Errorf(`limit value should be <= %d`, model.MaxEntryLimit)
 	}
 
 	return nil
@@ -32,7 +38,7 @@ func ValidateDirection(direction string) error {
 		return nil
 	}
 
-	return fmt.Errorf(`invalid direction, valid direction values are: "asc" or "desc"`)
+	return errors.New(`invalid direction, valid direction values are: "asc" or "desc"`)
 }
 
 // IsValidRegex verifies if the regex can be compiled.
@@ -41,12 +47,7 @@ func IsValidRegex(expr string) bool {
 	return err == nil
 }
 
-// IsValidURL verifies if the provided value is a valid absolute URL.
-func IsValidURL(absoluteURL string) bool {
-	_, err := url.ParseRequestURI(absoluteURL)
-	return err == nil
-}
-
+// IsValidDomain verifies a single domain name against length and character constraints.
 func IsValidDomain(domain string) bool {
 	domain = strings.ToLower(domain)
 
@@ -57,9 +58,10 @@ func IsValidDomain(domain string) bool {
 	return domainRegex.MatchString(domain)
 }
 
+// IsValidDomainList verifies a space-separated list of domains for validity.
 func IsValidDomainList(value string) bool {
-	domains := strings.Split(strings.TrimSpace(value), " ")
-	for _, domain := range domains {
+	domains := strings.SplitSeq(strings.TrimSpace(value), " ")
+	for domain := range domains {
 		if !IsValidDomain(domain) {
 			return false
 		}

@@ -1,18 +1,17 @@
-package linkace
+// SPDX-FileCopyrightText: Copyright The Miniflux Authors. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package linkace // import "miniflux.app/v2/internal/integration/linkace"
 
 import (
-	"bytes"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
+	"miniflux.app/v2/internal/http/client"
 	"miniflux.app/v2/internal/urllib"
-	"miniflux.app/v2/internal/version"
 )
-
-const defaultClientTimeout = 10 * time.Second
 
 type Client struct {
 	baseURL       string
@@ -28,7 +27,7 @@ func NewClient(baseURL, apiKey, tags string, private bool, checkDisabled bool) *
 
 func (c *Client) AddURL(entryURL, entryTitle string) error {
 	if c.baseURL == "" || c.apiKey == "" {
-		return fmt.Errorf("linkace: missing base URL or API key")
+		return errors.New("linkace: missing base URL or API key")
 	}
 
 	tagsSplitFn := func(c rune) bool {
@@ -39,31 +38,20 @@ func (c *Client) AddURL(entryURL, entryTitle string) error {
 	if err != nil {
 		return fmt.Errorf("linkace: invalid API endpoint: %v", err)
 	}
-	requestBody, err := json.Marshal(&createItemRequest{
-		Url:           entryURL,
-		Title:         entryTitle,
-		Tags:          strings.FieldsFunc(c.tags, tagsSplitFn),
-		Private:       c.private,
-		CheckDisabled: c.checkDisabled,
-	})
+	response, err := client.NewRequestBuilder(apiEndpoint).
+		WithMethod(http.MethodPost).
+		WithJSON(&createItemRequest{
+			URL:           entryURL,
+			Title:         entryTitle,
+			Tags:          strings.FieldsFunc(c.tags, tagsSplitFn),
+			Private:       c.private,
+			CheckDisabled: c.checkDisabled,
+		}).
+		WithHeader("Accept", "application/json").
+		WithHeader("Authorization", "Bearer "+c.apiKey).
+		Do()
 	if err != nil {
-		return fmt.Errorf("linkace: unable to encode request body: %v", err)
-	}
-
-	request, err := http.NewRequest(http.MethodPost, apiEndpoint, bytes.NewReader(requestBody))
-	if err != nil {
-		return fmt.Errorf("linkace: unable to create request: %v", err)
-	}
-
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "Miniflux/"+version.Version)
-	request.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	httpClient := &http.Client{Timeout: defaultClientTimeout}
-	response, err := httpClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("linkace: unable to send request: %v", err)
+		return fmt.Errorf("linkace: %w", err)
 	}
 	defer response.Body.Close()
 
@@ -76,7 +64,7 @@ func (c *Client) AddURL(entryURL, entryTitle string) error {
 
 type createItemRequest struct {
 	Title         string   `json:"title,omitempty"`
-	Url           string   `json:"url"`
+	URL           string   `json:"url"`
 	Tags          []string `json:"tags,omitempty"`
 	Private       bool     `json:"is_private,omitempty"`
 	CheckDisabled bool     `json:"check_disabled,omitempty"`

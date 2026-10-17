@@ -22,7 +22,7 @@
                 <button
                     class="page-button"
                     data-toggle-starred="true"
-                    data-star-url="{{ route "toggleStarred" "entryID" .entry.ID }}"
+                    data-star-url="{{ routePath "/entry/star/%d" .entry.ID }}"
                     data-label-loading="{{ t "entry.state.saving" }}"
                     data-label-star="{{ t "entry.starred.toggle.on" }}"
                     data-label-unstar="{{ t "entry.starred.toggle.off" }}"
@@ -37,7 +37,7 @@
                     class="page-button"
                     title="{{ t "entry.save.title" }}"
                     data-save-entry="true"
-                    data-save-url="{{ route "saveEntry" "entryID" .entry.ID }}"
+                    data-save-url="{{ routePath "/entry/save/%d" .entry.ID }}"
                     data-label-loading="{{ t "entry.state.saving" }}"
                     data-label-done="{{ t "entry.save.completed" }}"
                     data-toast-done="{{ t "entry.save.toast.completed" }}"
@@ -46,7 +46,7 @@
             {{ end }}
             {{ if .entry.ShareCode }}
             <li>
-                <a href="{{ route "sharedEntry" "shareCode" .entry.ShareCode }}"
+                <a href="{{ routePath "/share/%s" .entry.ShareCode }}"
                     title="{{ t "entry.shared_entry.title" }}"
                     data-share-status="shared"
                     {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>{{ icon "share" }}<span class="icon-label">{{ t "entry.shared_entry.label" }}</span></a>
@@ -55,7 +55,7 @@
                 <button
                     class="page-button"
                     data-confirm="true"
-                    data-url="{{ route "unshareEntry" "entryID" .entry.ID }}"
+                    data-url="{{ routePath "/entry/unshare/%d" .entry.ID }}"
                     data-label-question="{{ t "confirm.question" }}"
                     data-label-yes="{{ t "confirm.yes" }}"
                     data-label-no="{{ t "confirm.no" }}"
@@ -63,7 +63,7 @@
             </li>
             {{ else }}
             <li>
-                <form method="post" action="{{route "shareEntry" "entryID" .entry.ID }}">
+                <form method="post" action="{{ routePath "/entry/share/%d" .entry.ID }}">
                     <input type="hidden" name="csrf" value="{{ .csrf }}">
                     <button type="submit" class="page-button">
                         {{ icon "share" }}<span class="icon-label">{{ t "entry.share.label" }}</span>
@@ -77,7 +77,7 @@
 {{ end }}
 
 {{ define "content"}}
-<form action="{{ route "updateEntry" "entryID" .entry.ID }}" method="post" autocomplete="off">
+<form action="{{ routePath "/entry/%d/update" .entry.ID }}" method="post" autocomplete="off">
     <input type="hidden" name="csrf" value="{{ .csrf }}">
 
     {{ if .errorMessage }}
@@ -112,7 +112,7 @@
         data-label-yes="{{ t "confirm.yes" }}"
         data-label-no="{{ t "confirm.no" }}"
         data-label-loading="{{ t "confirm.loading" }}"
-        data-url="{{ route "removeEntry" "entryID" .entry.ID }}"
-        data-redirect-url="{{ route "feedEntries" "feedID" .entry.Feed.ID }}">{{ t "action.remove_entry" }}</a>
+        data-url="{{ routePath "/entry/%d/remove" .entry.ID }}"
+        data-redirect-url="{{ routePath "/feed/%d/entries" .entry.Feed.ID }}">{{ t "action.remove_entry" }}</a>
 </div>
 {{ end }}

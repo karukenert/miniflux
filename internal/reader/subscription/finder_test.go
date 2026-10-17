@@ -4,14 +4,13 @@
 package subscription
 
 import (
-	"strings"
 	"testing"
 )
 
 func TestFindYoutubeFeed(t *testing.T) {
 	type testResult struct {
 		websiteURL     string
-		feedURL        string
+		feedURLs       []string
 		discoveryError bool
 	}
 
@@ -19,57 +18,62 @@ func TestFindYoutubeFeed(t *testing.T) {
 		// Video URL
 		{
 			websiteURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-			feedURL:    "",
+			feedURLs:   []string{},
 		},
 		// Video URL with position argument
 		{
 			websiteURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1",
-			feedURL:    "",
+			feedURLs:   []string{},
 		},
 		// Video URL with position argument
 		{
 			websiteURL: "https://www.youtube.com/watch?t=1&v=dQw4w9WgXcQ",
-			feedURL:    "",
+			feedURLs:   []string{},
 		},
 		// Channel URL
 		{
 			websiteURL: "https://www.youtube.com/channel/UC-Qj80avWItNRjkZ41rzHyw",
-			feedURL:    "https://www.youtube.com/feeds/videos.xml?channel_id=UC-Qj80avWItNRjkZ41rzHyw",
+			feedURLs: []string{
+				"https://www.youtube.com/feeds/videos.xml?channel_id=UC-Qj80avWItNRjkZ41rzHyw",
+				"https://www.youtube.com/feeds/videos.xml?playlist_id=UULF-Qj80avWItNRjkZ41rzHyw",
+				"https://www.youtube.com/feeds/videos.xml?playlist_id=UUSH-Qj80avWItNRjkZ41rzHyw",
+				"https://www.youtube.com/feeds/videos.xml?playlist_id=UULV-Qj80avWItNRjkZ41rzHyw",
+			},
 		},
 		// Channel URL with name
 		{
 			websiteURL: "https://www.youtube.com/@ABCDEFG",
-			feedURL:    "",
+			feedURLs:   []string{},
 		},
 		// Playlist URL
 		{
 			websiteURL: "https://www.youtube.com/playlist?list=PLOOwEPgFWm_NHcQd9aCi5JXWASHO_n5uR",
-			feedURL:    "https://www.youtube.com/feeds/videos.xml?playlist_id=PLOOwEPgFWm_NHcQd9aCi5JXWASHO_n5uR",
+			feedURLs:   []string{"https://www.youtube.com/feeds/videos.xml?playlist_id=PLOOwEPgFWm_NHcQd9aCi5JXWASHO_n5uR"},
 		},
 		// Playlist URL with video ID
 		{
 			websiteURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLOOwEPgFWm_N42HlCLhqyJ0ZBWr5K1QDM",
-			feedURL:    "https://www.youtube.com/feeds/videos.xml?playlist_id=PLOOwEPgFWm_N42HlCLhqyJ0ZBWr5K1QDM",
+			feedURLs:   []string{"https://www.youtube.com/feeds/videos.xml?playlist_id=PLOOwEPgFWm_N42HlCLhqyJ0ZBWr5K1QDM"},
 		},
 		// Playlist URL with video ID and index argument
 		{
 			websiteURL: "https://www.youtube.com/watch?v=6IutBmRJNLk&list=PLOOwEPgFWm_NHcQd9aCi5JXWASHO_n5uR&index=4",
-			feedURL:    "https://www.youtube.com/feeds/videos.xml?playlist_id=PLOOwEPgFWm_NHcQd9aCi5JXWASHO_n5uR",
+			feedURLs:   []string{"https://www.youtube.com/feeds/videos.xml?playlist_id=PLOOwEPgFWm_NHcQd9aCi5JXWASHO_n5uR"},
 		},
 		// Empty playlist ID parameter
 		{
 			websiteURL: "https://www.youtube.com/playlist?list=",
-			feedURL:    "",
+			feedURLs:   []string{},
 		},
 		// Non-Youtube URL
 		{
 			websiteURL: "https://www.example.com/channel/UC-Qj80avWItNRjkZ41rzHyw",
-			feedURL:    "",
+			feedURLs:   []string{},
 		},
 		// Invalid URL
 		{
 			websiteURL:     "https://example|org/",
-			feedURL:        "",
+			feedURLs:       []string{},
 			discoveryError: true,
 		},
 	}
@@ -82,7 +86,7 @@ func TestFindYoutubeFeed(t *testing.T) {
 			}
 		}
 
-		if scenario.feedURL == "" {
+		if len(scenario.feedURLs) == 0 {
 			if len(subscriptions) > 0 {
 				t.Fatalf(`Parsing an invalid URL should not return any subscription: %q -> %v`, scenario.websiteURL, subscriptions)
 			}
@@ -91,12 +95,14 @@ func TestFindYoutubeFeed(t *testing.T) {
 				t.Fatalf(`Parsing a correctly formatted YouTube playlist or channel page should not return any error: %v`, localizedError)
 			}
 
-			if len(subscriptions) != 1 {
-				t.Fatalf(`Incorrect number of subscriptions returned`)
+			if len(subscriptions) != len(scenario.feedURLs) {
+				t.Fatalf(`Incorrect number of subscriptions returned, expected %d, got %d`, len(scenario.feedURLs), len(subscriptions))
 			}
 
-			if subscriptions[0].URL != scenario.feedURL {
-				t.Errorf(`Unexpected feed, got %s, instead of %s`, subscriptions[0].URL, scenario.feedURL)
+			for i := range scenario.feedURLs {
+				if subscriptions[i].URL != scenario.feedURLs[i] {
+					t.Errorf(`Unexpected feed, got %s, instead of %s`, subscriptions[i].URL, scenario.feedURLs[i])
+				}
 			}
 		}
 	}
@@ -112,8 +118,12 @@ func TestParseWebPageWithRssFeed(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -145,8 +155,12 @@ func TestParseWebPageWithAtomFeed(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -178,8 +192,12 @@ func TestParseWebPageWithJSONFeed(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -211,8 +229,12 @@ func TestParseWebPageWithOldJSONFeedMimeType(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -234,6 +256,32 @@ func TestParseWebPageWithOldJSONFeedMimeType(t *testing.T) {
 	}
 }
 
+func TestParseWebPageWithJSONFeedWpJsonIgnored(t *testing.T) {
+	htmlPage := `
+	<!doctype html>
+	<html>
+		<head>
+			<link rel="https://api.w.org/" href="https://example.org/wp-json/" />
+			<link rel="alternate" title="JSON" type="application/json" href="https://example.org/wp-json/wp/v2/posts/123456" />
+		</head>
+		<body>
+		</body>
+	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
+
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
+	if err != nil {
+		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
+	}
+
+	if len(subscriptions) != 0 {
+		t.Fatal(`Incorrect number of subscriptions returned`)
+	}
+}
+
 func TestParseWebPageWithRelativeFeedURL(t *testing.T) {
 	htmlPage := `
 	<!doctype html>
@@ -244,8 +292,12 @@ func TestParseWebPageWithRelativeFeedURL(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -277,8 +329,12 @@ func TestParseWebPageWithEmptyTitle(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -311,8 +367,12 @@ func TestParseWebPageWithMultipleFeeds(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -333,8 +393,12 @@ func TestParseWebPageWithDuplicatedFeeds(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -366,8 +430,12 @@ func TestParseWebPageWithEmptyFeedURL(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
@@ -387,13 +455,167 @@ func TestParseWebPageWithNoHref(t *testing.T) {
 		<body>
 		</body>
 	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
 
-	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", "text/html", strings.NewReader(htmlPage))
+	subscriptions, err := NewSubscriptionFinder(nil).findSubscriptionsFromWebPage("http://example.org/", doc)
 	if err != nil {
 		t.Fatalf(`Parsing a correctly formatted HTML page should not return any error: %v`, err)
 	}
 
 	if len(subscriptions) != 0 {
 		t.Fatal(`Incorrect number of subscriptions returned`)
+	}
+}
+
+func TestFindCanonicalURL(t *testing.T) {
+	htmlPage := `
+	<!doctype html>
+	<html>
+		<head>
+			<link rel="canonical" href="https://example.org/canonical-page">
+		</head>
+		<body>
+		</body>
+	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
+
+	canonicalURL := NewSubscriptionFinder(nil).findCanonicalURL("https://example.org/page", "http://example.org", doc)
+	if canonicalURL != "https://example.org/canonical-page" {
+		t.Errorf(`Unexpected canonical URL, got %q, expected %q`, canonicalURL, "https://example.org/canonical-page")
+	}
+}
+
+func TestFindCanonicalURLNotFound(t *testing.T) {
+	htmlPage := `
+	<!doctype html>
+	<html>
+		<head>
+		</head>
+		<body>
+		</body>
+	</html>`
+	doc, shouldNeverHappenErr := parseHTMLDocument("text/html", []byte(htmlPage))
+	if shouldNeverHappenErr != nil {
+		t.Fatalf(`Unable to parse the HTML: %v`, shouldNeverHappenErr)
+	}
+
+	canonicalURL := NewSubscriptionFinder(nil).findCanonicalURL("https://example.org/page", "https://example.org", doc)
+	if canonicalURL != "https://example.org/page" {
+		t.Errorf(`Expected effective URL when canonical not found, got %q`, canonicalURL)
+	}
+}
+
+func TestFindGitHubFeed(t *testing.T) {
+	type testResult struct {
+		websiteURL     string
+		feedURLs       []string
+		discoveryError bool
+	}
+
+	scenarios := []testResult{
+		// User profile.
+		{
+			websiteURL: "https://github.com/jvoisin",
+			feedURLs:   []string{"https://github.com/jvoisin.atom"},
+		},
+		// Organization profile.
+		{
+			websiteURL: "https://github.com/miniflux",
+			feedURLs:   []string{"https://github.com/miniflux.atom"},
+		},
+		// User profile with a trailing slash.
+		{
+			websiteURL: "https://github.com/jvoisin/",
+			feedURLs:   []string{"https://github.com/jvoisin.atom"},
+		},
+		// User profile served from the www subdomain.
+		{
+			websiteURL: "https://www.github.com/jvoisin",
+			feedURLs:   []string{"https://github.com/jvoisin.atom"},
+		},
+		// Repository.
+		{
+			websiteURL: "https://github.com/miniflux/v2",
+			feedURLs: []string{
+				"https://github.com/miniflux/v2/commits.atom",
+				"https://github.com/miniflux/v2/releases.atom",
+				"https://github.com/miniflux/v2/tags.atom",
+			},
+		},
+		// Repository with a trailing slash.
+		{
+			websiteURL: "https://github.com/miniflux/v2/",
+			feedURLs: []string{
+				"https://github.com/miniflux/v2/commits.atom",
+				"https://github.com/miniflux/v2/releases.atom",
+				"https://github.com/miniflux/v2/tags.atom",
+			},
+		},
+		// Deeper repository URL (e.g. a specific file or subpage) has no
+		// dedicated feed.
+		{
+			websiteURL: "https://github.com/miniflux/v2/blob/main/README.md",
+			feedURLs:   []string{},
+		},
+		// Arbitrary deep path that does not map to a repository has no feed.
+		{
+			websiteURL: "https://github.com/jvoisin/mat2/test/something/wrong/lol",
+			feedURLs:   []string{},
+		},
+		// GitHub root page has no feed.
+		{
+			websiteURL: "https://github.com/",
+			feedURLs:   []string{},
+		},
+		{
+			websiteURL: "https://github.com",
+			feedURLs:   []string{},
+		},
+		// Non-GitHub URL.
+		{
+			websiteURL: "https://example.org/jvoisin",
+			feedURLs:   []string{},
+		},
+		// A domain that merely ends with github.com must not be treated as GitHub.
+		{
+			websiteURL: "https://notgithub.com/jvoisin",
+			feedURLs:   []string{},
+		},
+		// Invalid URL.
+		{
+			websiteURL:     "https://github|com/",
+			feedURLs:       []string{},
+			discoveryError: true,
+		},
+	}
+
+	for _, scenario := range scenarios {
+		subscriptions, localizedError := NewSubscriptionFinder(nil).findSubscriptionsFromGitHub(scenario.websiteURL)
+		if scenario.discoveryError {
+			if localizedError == nil {
+				t.Fatalf(`Parsing an invalid URL should return an error`)
+			}
+			continue
+		}
+
+		if localizedError != nil {
+			t.Fatalf(`Parsing a GitHub URL should not return any error: %q -> %v`, scenario.websiteURL, localizedError)
+		}
+
+		if len(subscriptions) != len(scenario.feedURLs) {
+			t.Fatalf(`Incorrect number of subscriptions returned for %q, expected %d, got %d`, scenario.websiteURL, len(scenario.feedURLs), len(subscriptions))
+		}
+
+		for i := range scenario.feedURLs {
+			if subscriptions[i].URL != scenario.feedURLs[i] {
+				t.Errorf(`Unexpected feed for %q, got %s, instead of %s`, scenario.websiteURL, subscriptions[i].URL, scenario.feedURLs[i])
+			}
+		}
 	}
 }

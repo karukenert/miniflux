@@ -34,19 +34,15 @@ type SettingsForm struct {
 	EntryDirection         string
 	EntryOrder             string
 	EntriesPerPage         int
-	KeyboardShortcuts      bool
-	ShowReadingTime        bool
 	CustomCSS              string
 	CustomJS               string
 	ExternalFontHosts      string
-	EntrySwipe             bool
 	GestureNav             string
 	DisplayMode            string
 	DefaultReadingSpeed    int
 	CJKReadingSpeed        int
 	DefaultHomePage        string
 	CategoriesSortingOrder string
-	MarkReadOnView         bool
 	// MarkReadBehavior is a string representation of the MarkReadOnView and MarkReadOnMediaPlayerCompletion fields together
 	MarkReadBehavior          markReadBehavior
 	MediaPlaybackRate         float64
@@ -54,6 +50,10 @@ type SettingsForm struct {
 	KeepFilterEntryRules      string
 	AlwaysOpenExternalLinks   bool
 	OpenExternalLinksInNewTab bool
+	KeyboardShortcuts         bool
+	EntrySwipe                bool
+	MarkReadOnView            bool
+	ShowReadingTime           bool
 }
 
 // MarkAsReadBehavior returns the MarkReadBehavior from the given MarkReadOnView and MarkReadOnMediaPlayerCompletion values.
@@ -123,7 +123,7 @@ func (s *SettingsForm) Merge(user *model.User) *model.User {
 	user.MarkReadOnView = MarkReadOnView
 	user.MarkReadOnMediaPlayerCompletion = MarkReadOnMediaPlayerCompletion
 
-	if s.Password != "" {
+	if s.Password != "" && !config.Opts.DisableLocalAuth() {
 		user.Password = s.Password
 	}
 
@@ -166,15 +166,15 @@ func (s *SettingsForm) Validate() *locale.LocalizedError {
 
 // NewSettingsForm returns a new SettingsForm.
 func NewSettingsForm(r *http.Request) *SettingsForm {
-	entriesPerPage, err := strconv.ParseInt(r.FormValue("entries_per_page"), 10, 0)
+	entriesPerPage, err := strconv.Atoi(r.FormValue("entries_per_page"))
 	if err != nil {
 		entriesPerPage = 0
 	}
-	defaultReadingSpeed, err := strconv.ParseInt(r.FormValue("default_reading_speed"), 10, 0)
+	defaultReadingSpeed, err := strconv.Atoi(r.FormValue("default_reading_speed"))
 	if err != nil {
 		defaultReadingSpeed = 0
 	}
-	cjkReadingSpeed, err := strconv.ParseInt(r.FormValue("cjk_reading_speed"), 10, 0)
+	cjkReadingSpeed, err := strconv.Atoi(r.FormValue("cjk_reading_speed"))
 	if err != nil {
 		cjkReadingSpeed = 0
 	}

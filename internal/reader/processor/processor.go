@@ -50,16 +50,16 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, userID int64, 
 		slog.Int64("feed_id", feed.ID),
 	)
 
-	requestBuilder := fetcher.NewRequestBuilder()
-	requestBuilder.WithUserAgent(feed.UserAgent, config.Opts.HTTPClientUserAgent())
-	requestBuilder.WithCookie(feed.Cookie)
-	requestBuilder.WithTimeout(config.Opts.HTTPClientTimeout())
-	requestBuilder.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
-	requestBuilder.WithCustomFeedProxyURL(feed.ProxyURL)
-	requestBuilder.WithCustomApplicationProxyURL(config.Opts.HTTPClientProxyURL())
-	requestBuilder.UseCustomApplicationProxyURL(feed.FetchViaProxy)
-	requestBuilder.IgnoreTLSErrors(feed.AllowSelfSignedCertificates)
-	requestBuilder.DisableHTTP2(feed.DisableHTTP2)
+	requestBuilder := fetcher.NewRequestBuilder().
+		WithUserAgent(feed.UserAgent, config.Opts.HTTPClientUserAgent()).
+		WithCookie(feed.Cookie).
+		WithTimeout(config.Opts.HTTPClientTimeout()).
+		WithProxyRotator(proxyrotator.ProxyRotatorInstance).
+		WithCustomFeedProxyURL(feed.ProxyURL).
+		WithCustomApplicationProxyURL(config.Opts.HTTPClientProxyURL()).
+		UseCustomApplicationProxyURL(feed.FetchViaProxy).
+		IgnoreTLSErrors(feed.AllowSelfSignedCertificates).
+		DisableHTTP2(feed.DisableHTTP2)
 
 	// Processing older entries first ensures that their creation timestamp is lower than newer entries.
 	for _, entry := range slices.Backward(feed.Entries) {
@@ -80,6 +80,7 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, userID int64, 
 				slog.String("entry_title", entry.Title),
 				slog.Int64("feed_id", feed.ID),
 				slog.String("feed_url", feed.FeedURL),
+				slog.String("filter_stage", "before_scrape"),
 			)
 			continue
 		}
@@ -92,6 +93,7 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, userID int64, 
 		webpageBaseURL := ""
 		entry.URL = rewrite.RewriteEntryURL(feed, entry)
 		entryIsNew := store.IsNewEntry(feed.ID, entry.Hash)
+		contentExtractedSuccessfully := false
 		if feed.Crawler && (entryIsNew || forceRefresh) {
 			slog.Debug("Scraping entry",
 				slog.Int64("user_id", user.ID),
@@ -104,21 +106,37 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, userID int64, 
 				slog.Bool("force_refresh", forceRefresh),
 			)
 
-			scrapedPageBaseURL, _ := processEntryWithRequestBuilder(
-				feed,
-				entry,
-				user,
-				requestBuilder,
-			)
-
+			scrapedPageBaseURL, scraperErr := processEntryWithRequestBuilder(feed, entry, user, requestBuilder)
 			if scrapedPageBaseURL != "" {
 				webpageBaseURL = scrapedPageBaseURL
 			}
+			contentExtractedSuccessfully = scraperErr == nil
+		}
+
+		rewrite.ApplyContentRewriteRules(entry, feed.RewriteRules)
+
+		// Re-run filters only when extracted content replaced entry.Content.
+		if contentExtractedSuccessfully && filter.IsBlockedEntry(blockRules, allowRules, feed, entry) {
+			slog.Debug("Entry is blocked by filter rules",
+				slog.Int64("user_id", user.ID),
+				slog.String("entry_url", entry.URL),
+				slog.String("entry_hash", entry.Hash),
+				slog.String("entry_title", entry.Title),
+				slog.Int64("feed_id", feed.ID),
+				slog.String("feed_url", feed.FeedURL),
+				slog.String("filter_stage", "after_scrape"),
+			)
+			continue
 		}
 
 		if webpageBaseURL == "" {
 			webpageBaseURL = entry.URL
 		}
+
+		// The sanitizer should always run at the end of the process to make sure unsafe HTML is filtered out.
+		entry.Content = sanitizer.SanitizeHTML(webpageBaseURL, entry.Content, &sanitizer.SanitizerOptions{OpenLinksInNewTab: user.OpenExternalLinksInNewTab})
+
+		updateEntryReadingTime(store, feed, entry, entryIsNew, user)
 
 		filteredEntries = append(filteredEntries, entry)
 	}
@@ -134,22 +152,35 @@ func ProcessFeedEntries(store *storage.Storage, feed *model.Feed, userID int64, 
 func ProcessEntryWebPage(feed *model.Feed, entry *model.Entry, user *model.User) error {
 	entry.URL = rewrite.RewriteEntryURL(feed, entry)
 
-	requestBuilder := fetcher.NewRequestBuilder()
-	requestBuilder.WithUserAgent(feed.UserAgent, config.Opts.HTTPClientUserAgent())
-	requestBuilder.WithCookie(feed.Cookie)
-	requestBuilder.WithTimeout(config.Opts.HTTPClientTimeout())
-	requestBuilder.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
-	requestBuilder.WithCustomFeedProxyURL(feed.ProxyURL)
-	requestBuilder.WithCustomApplicationProxyURL(config.Opts.HTTPClientProxyURL())
-	requestBuilder.UseCustomApplicationProxyURL(feed.FetchViaProxy)
-	requestBuilder.IgnoreTLSErrors(feed.AllowSelfSignedCertificates)
-	requestBuilder.DisableHTTP2(feed.DisableHTTP2)
+	requestBuilder := fetcher.NewRequestBuilder().
+		WithUserAgent(feed.UserAgent, config.Opts.HTTPClientUserAgent()).
+		WithCookie(feed.Cookie).
+		WithTimeout(config.Opts.HTTPClientTimeout()).
+		WithProxyRotator(proxyrotator.ProxyRotatorInstance).
+		WithCustomFeedProxyURL(feed.ProxyURL).
+		WithCustomApplicationProxyURL(config.Opts.HTTPClientProxyURL()).
+		UseCustomApplicationProxyURL(feed.FetchViaProxy).
+		IgnoreTLSErrors(feed.AllowSelfSignedCertificates).
+		DisableHTTP2(feed.DisableHTTP2)
 
-	_, err := processEntryWithRequestBuilder(feed, entry, user, requestBuilder)
-	return err
+	webpageBaseURL, err := processEntryWithRequestBuilder(feed, entry, user, requestBuilder)
+	if err != nil {
+		return err
+	}
+
+	rewrite.ApplyContentRewriteRules(entry, entry.Feed.RewriteRules)
+	entry.Content = sanitizer.SanitizeHTML(webpageBaseURL, entry.Content, &sanitizer.SanitizerOptions{OpenLinksInNewTab: user.OpenExternalLinksInNewTab})
+
+	if user.ShowReadingTime {
+		entry.ReadingTime = readingtime.EstimateReadingTime(entry, user)
+	}
+
+	return nil
 }
 
-func processEntryWithRequestBuilder(feed *model.Feed, entry *model.Entry, user *model.User, requestBuilder *fetcher.RequestBuilder) (scrapedPageBaseUrl string, err error) {
+// processEntryWithRequestBuilder scrapes the entry web page and patches the entry with the extracted content and metadata.
+// It returns the base URL of the scraped page. The caller is responsible for applying rewrite rules and sanitizing the content.
+func processEntryWithRequestBuilder(feed *model.Feed, entry *model.Entry, user *model.User, requestBuilder *fetcher.RequestBuilder) (string, error) {
 	startTime := time.Now()
 	entryRequest, scraperErr := scraper.ScrapeWebsite(
 		requestBuilder,
@@ -158,9 +189,9 @@ func processEntryWithRequestBuilder(feed *model.Feed, entry *model.Entry, user *
 	)
 
 	if config.Opts.HasMetricsCollector() {
-		status := "success"
+		status := metric.StatusSuccess
 		if scraperErr != nil {
-			status = "error"
+			status = metric.StatusError
 		}
 		metric.ScraperRequestDuration.WithLabelValues(status).Observe(time.Since(startTime).Seconds())
 	}
@@ -173,22 +204,29 @@ func processEntryWithRequestBuilder(feed *model.Feed, entry *model.Entry, user *
 			slog.String("feed_url", feed.FeedURL),
 			slog.Any("error", scraperErr),
 		)
-		return scrapedPageBaseUrl, scraperErr
+		return "", scraperErr
 	}
 
-	if entryRequest.Content != nil && *entryRequest.Content != "" {
-		// Minify and sanitize the content
-		sanitized := sanitizer.SanitizeHTML(scrapedPageBaseUrl, *entryRequest.Content, &sanitizer.SanitizerOptions{OpenLinksInNewTab: user.OpenExternalLinksInNewTab})
-		entryRequest.Content = &sanitized
-
-		if user.ShowReadingTime {
-			rt := readingtime.EstimateReadingTime(entry, user)
-			entryRequest.ReadingTime = &rt
-		}
+	// The scraper returns the base URL of the page in the URL field.
+	var scrapedPageBaseURL string
+	if entryRequest.URL != nil {
+		scrapedPageBaseURL = *entryRequest.URL
 	}
 
 	entryRequest.Patch(entry)
-	rewrite.ApplyContentRewriteRules(entry, entry.Feed.RewriteRules)
 
-	return scrapedPageBaseUrl, nil
+	return scrapedPageBaseURL, nil
+}
+
+func updateEntryReadingTime(store *storage.Storage, feed *model.Feed, entry *model.Entry, entryIsNew bool, user *model.User) {
+	if !user.ShowReadingTime {
+		return
+	}
+
+	// Reuse the stored reading time of existing entries to avoid fetching the watch time of videos again.
+	if !entryIsNew {
+		entry.ReadingTime = store.GetReadTime(feed.ID, entry.Hash)
+	}
+
+	entry.ReadingTime = readingtime.EstimateReadingTime(entry, user)
 }

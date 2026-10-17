@@ -8,34 +8,33 @@ import (
 
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/http/request"
-	"miniflux.app/v2/internal/http/response/html"
+	"miniflux.app/v2/internal/http/response"
 	"miniflux.app/v2/internal/ui/form"
-	"miniflux.app/v2/internal/ui/session"
 	"miniflux.app/v2/internal/ui/view"
 )
 
 func (h *handler) showEditFeedPage(w http.ResponseWriter, r *http.Request) {
 	user, err := h.store.UserByID(request.UserID(r))
 	if err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
 
 	feedID := request.RouteInt64Param(r, "feedID")
 	feed, err := h.store.FeedByID(user.ID, feedID)
 	if err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
 
 	if feed == nil {
-		html.NotFound(w, r)
+		response.HTMLNotFound(w, r)
 		return
 	}
 
 	categories, err := h.store.Categories(user.ID)
 	if err != nil {
-		html.ServerError(w, r, err)
+		response.HTMLServerError(w, r, err)
 		return
 	}
 
@@ -59,6 +58,7 @@ func (h *handler) showEditFeedPage(w http.ResponseWriter, r *http.Request) {
 		BlockFilterEntryRules:       feed.BlockFilterEntryRules,
 		KeepFilterEntryRules:        feed.KeepFilterEntryRules,
 		Crawler:                     feed.Crawler,
+		IgnoreEntryUpdates:          feed.IgnoreEntryUpdates,
 		UserAgent:                   feed.UserAgent,
 		Cookie:                      feed.Cookie,
 		CategoryID:                  categoryID,
@@ -82,17 +82,17 @@ func (h *handler) showEditFeedPage(w http.ResponseWriter, r *http.Request) {
 		ProxyURL:                    feed.ProxyURL,
 	}
 
-	sess := session.New(h.store, request.SessionID(r))
-	view := view.New(h.tpl, r, sess)
+	view := view.New(h.tpl, r)
 	view.Set("form", feedForm)
 	view.Set("categories", categories)
 	view.Set("feed", feed)
 	view.Set("menu", "feeds")
 	view.Set("user", user)
-	view.Set("countUnread", h.store.CountUnreadEntries(user.ID))
-	view.Set("countErrorFeeds", h.store.CountUserFeedsWithErrors(user.ID))
+	navMetadata, _ := h.store.GetNavMetadata(user.ID)
+	view.Set("countUnread", navMetadata.CountUnread)
+	view.Set("countErrorFeeds", navMetadata.CountErrorFeeds)
 	view.Set("defaultUserAgent", config.Opts.HTTPClientUserAgent())
 	view.Set("hasProxyConfigured", config.Opts.HasHTTPClientProxyURLConfigured())
 
-	html.OK(w, r, view.Render("edit_feed"))
+	response.HTML(w, r, view.Render("edit_feed"))
 }

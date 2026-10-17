@@ -5,16 +5,13 @@ package espial // import "miniflux.app/v2/internal/integration/espial"
 
 import (
 	"bytes"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
+	"miniflux.app/v2/internal/http/client"
 	"miniflux.app/v2/internal/urllib"
-	"miniflux.app/v2/internal/version"
 )
-
-const defaultClientTimeout = 10 * time.Second
 
 type Client struct {
 	baseURL string
@@ -27,7 +24,7 @@ func NewClient(baseURL, apiKey string) *Client {
 
 func (c *Client) CreateLink(entryURL, entryTitle, espialTags string) error {
 	if c.baseURL == "" || c.apiKey == "" {
-		return fmt.Errorf("espial: missing base URL or API key")
+		return errors.New("espial: missing base URL or API key")
 	}
 
 	apiEndpoint, err := urllib.JoinBaseURLAndPath(c.baseURL, "/api/add")
@@ -35,30 +32,18 @@ func (c *Client) CreateLink(entryURL, entryTitle, espialTags string) error {
 		return fmt.Errorf("espial: invalid API endpoint: %v", err)
 	}
 
-	requestBody, err := json.Marshal(&espialDocument{
-		Title:  entryTitle,
-		Url:    entryURL,
-		ToRead: true,
-		Tags:   espialTags,
-	})
-
+	response, err := client.NewRequestBuilder(apiEndpoint).
+		WithMethod(http.MethodPost).
+		WithJSON(&espialDocument{
+			Title:  entryTitle,
+			URL:    entryURL,
+			ToRead: true,
+			Tags:   espialTags,
+		}).
+		WithHeader("Authorization", "ApiKey "+c.apiKey).
+		Do()
 	if err != nil {
-		return fmt.Errorf("espial: unable to encode request body: %v", err)
-	}
-
-	request, err := http.NewRequest(http.MethodPost, apiEndpoint, bytes.NewReader(requestBody))
-	if err != nil {
-		return fmt.Errorf("espial: unable to create request: %v", err)
-	}
-
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", "Miniflux/"+version.Version)
-	request.Header.Set("Authorization", "ApiKey "+c.apiKey)
-
-	httpClient := &http.Client{Timeout: defaultClientTimeout}
-	response, err := httpClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("espial: unable to send request: %v", err)
+		return fmt.Errorf("espial: %w", err)
 	}
 	defer response.Body.Close()
 
@@ -74,7 +59,7 @@ func (c *Client) CreateLink(entryURL, entryTitle, espialTags string) error {
 
 type espialDocument struct {
 	Title  string `json:"title,omitempty"`
-	Url    string `json:"url,omitempty"`
+	URL    string `json:"url,omitempty"`
 	ToRead bool   `json:"toread,omitempty"`
 	Tags   string `json:"tags,omitempty"`
 }

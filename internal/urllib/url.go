@@ -4,78 +4,146 @@
 package urllib // import "miniflux.app/v2/internal/urllib"
 
 import (
+	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 )
 
-// IsAbsoluteURL returns true if the link is absolute.
-func IsAbsoluteURL(link string) bool {
-	u, err := url.Parse(link)
+var rfc6598SharedAddressSpacePrefix = netip.MustParsePrefix("100.64.0.0/10")
+
+// IsRelativePath reports whether the link is a relative path (no scheme, host, or scheme-relative // form).
+func IsRelativePath(link string) bool {
+	if link == "" {
+		return false
+	}
+
+	// Reject surrounding whitespace: browsers strip leading and trailing C0
+	// control characters and spaces before parsing a target, while Go's url.Parse
+	// treats spaces as path characters. Without this check, a target like
+	// " //evil.com" is accepted here and becomes //evil.com in the browser.
+	if link != strings.TrimSpace(link) {
+		return false
+	}
+
+	// Reject backslashes: Go's url.Parse treats them as ordinary path
+	// characters, but browsers normalize them to forward slashes, so a target
+	// like "/\evil.com" would parse as relative here yet redirect to
+	// //evil.com in the browser (open redirect).
+	if strings.Contains(link, "\\") {
+		return false
+	}
+
+	if parsedURL, err := url.Parse(link); err == nil {
+		// Only allow relative paths (not scheme-relative URLs like //example.org)
+		// and ensure the URL doesn't have a host component
+		if !parsedURL.IsAbs() && parsedURL.Host == "" && parsedURL.Scheme == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasHTTPPrefix reports whether the URL string begins with an HTTP or HTTPS scheme.
+func hasHTTPPrefix(inputURL string) bool {
+	return strings.HasPrefix(inputURL, "https://") || strings.HasPrefix(inputURL, "http://")
+}
+
+// hasSOCKSPrefix reports whether the URL string begins with an SOCKS5 or SOCKS5H scheme.
+func hasSOCKSPrefix(inputURL string) bool {
+	return strings.HasPrefix(inputURL, "socks5://") || strings.HasPrefix(inputURL, "socks5h://")
+}
+
+// IsAbsoluteURL reports whether the link is absolute and starts with an HTTP or HTTPS scheme.
+func IsAbsoluteURL(inputURL string) bool {
+	if !hasHTTPPrefix(inputURL) {
+		return false
+	}
+	parsedURL, err := url.Parse(inputURL)
 	if err != nil {
 		return false
 	}
-	return u.IsAbs()
+	return parsedURL.IsAbs()
 }
 
-// GetAbsoluteURL returns the absolute form of `input` if possible, as well as its parsed form.
-func GetAbsoluteURL(input string) (string, *url.URL, error) {
-	if strings.HasPrefix(input, "//") {
-		return "https:" + input, nil, nil
+// IsValidProxyURL reports whether the url is absolute, has a host and starts with an HTTP, HTTPS, SOCKS5 or SOCKS5H scheme.
+func IsValidProxyURL(inputURL string) bool {
+	if !hasHTTPPrefix(inputURL) && !hasSOCKSPrefix(inputURL) {
+		return false
 	}
-	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
-		return input, nil, nil
-	}
-
-	u, err := url.Parse(input)
+	parsedURL, err := url.Parse(inputURL)
 	if err != nil {
-		return "", nil, fmt.Errorf("unable to parse input URL: %v", err)
+		return false
 	}
-
-	if u.IsAbs() {
-		return u.String(), u, nil
-	}
-	return "", u, nil
+	return parsedURL.IsAbs() && parsedURL.Host != ""
 }
 
-// AbsoluteURL converts the input URL as absolute URL if necessary.
-func AbsoluteURL(baseURL, input string) (string, error) {
-	absURL, u, err := GetAbsoluteURL(input)
-	if err != nil {
-		return "", err
+// resolveToAbsoluteURL resolves a relative URL using a base URL, parsing the base only if needed.
+func resolveToAbsoluteURL(parsedBaseURL *url.URL, baseURL, relativeURL string) (string, error) {
+	// Avoid parsing the relative URL if it's already absolute
+	if strings.HasPrefix(relativeURL, "//") {
+		return "https:" + relativeURL, nil
 	}
-	if absURL != "" {
-		return absURL, nil
-	}
-
-	base, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("unable to parse base URL: %v", err)
+	if hasHTTPPrefix(relativeURL) {
+		return relativeURL, nil
 	}
 
-	return base.ResolveReference(u).String(), nil
+	// Parse the relative URL and check if it's already absolute
+	parsedRelativeURL, err := url.Parse(relativeURL)
+	if err != nil {
+		return "", fmt.Errorf("unable to parse relative URL: %w", err)
+	}
+	if parsedRelativeURL.IsAbs() {
+		return relativeURL, nil
+	}
+
+	// Parse the base URL if not already parsed
+	if parsedBaseURL == nil {
+		parsedBaseURL, err = url.Parse(baseURL)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse base URL: %w", err)
+		}
+	}
+
+	return parsedBaseURL.ResolveReference(parsedRelativeURL).String(), nil
 }
 
-// RootURL returns absolute URL without the path.
+// ResolveToAbsoluteURL resolves a relative URL against a base URL and returns the absolute URL.
+func ResolveToAbsoluteURL(baseURL, relativeURL string) (string, error) {
+	return resolveToAbsoluteURL(nil, baseURL, relativeURL)
+}
+
+// ResolveToAbsoluteURLWithParsedBaseURL resolves a relative URL using a pre-parsed base URL and returns the absolute URL.
+func ResolveToAbsoluteURLWithParsedBaseURL(parsedBaseURL *url.URL, relativeURL string) (string, error) {
+	return resolveToAbsoluteURL(parsedBaseURL, "", relativeURL)
+}
+
+// RootURL returns the scheme and host of the given URL with a trailing slash.
 func RootURL(websiteURL string) string {
+	if websiteURL == "" {
+		return ""
+	}
+
 	if strings.HasPrefix(websiteURL, "//") {
 		websiteURL = "https://" + websiteURL[2:]
 	}
 
-	absoluteURL, err := AbsoluteURL(websiteURL, "")
-	if err != nil {
+	u, err := url.Parse(websiteURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
 		return websiteURL
 	}
 
-	u, err := url.Parse(absoluteURL)
-	if err != nil {
-		return absoluteURL
-	}
+	u.Fragment = ""
+	u.RawQuery = ""
+	u.Path = "/"
+	u.RawPath = ""
 
 	return u.Scheme + "://" + u.Host + "/"
 }
 
-// IsHTTPS returns true if the URL is using HTTPS.
+// IsHTTPS reports whether the URL uses HTTPS.
 func IsHTTPS(websiteURL string) bool {
 	parsedURL, err := url.Parse(websiteURL)
 	if err != nil {
@@ -85,7 +153,7 @@ func IsHTTPS(websiteURL string) bool {
 	return strings.EqualFold(parsedURL.Scheme, "https")
 }
 
-// Domain returns only the domain part of the given URL.
+// Domain returns the host component of the given URL.
 func Domain(websiteURL string) string {
 	parsedURL, err := url.Parse(websiteURL)
 	if err != nil {
@@ -95,24 +163,19 @@ func Domain(websiteURL string) string {
 	return parsedURL.Host
 }
 
-// DomainWithoutWWW returns only the domain part of the given URL, with the "www." prefix removed if present.
+// DomainWithoutWWW returns the host component without a leading "www." prefix when present.
 func DomainWithoutWWW(websiteURL string) string {
 	return strings.TrimPrefix(Domain(websiteURL), "www.")
 }
 
-// JoinBaseURLAndPath returns a URL string with the provided path elements joined together.
+// JoinBaseURLAndPath joins a base URL and a path segment into a single URL string.
 func JoinBaseURLAndPath(baseURL, path string) (string, error) {
 	if baseURL == "" {
-		return "", fmt.Errorf("empty base URL")
+		return "", errors.New("empty base URL")
 	}
 
 	if path == "" {
-		return "", fmt.Errorf("empty path")
-	}
-
-	_, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("invalid base URL: %w", err)
+		return "", errors.New("empty path")
 	}
 
 	finalURL, err := url.JoinPath(baseURL, path)
@@ -121,4 +184,23 @@ func JoinBaseURLAndPath(baseURL, path string) (string, error) {
 	}
 
 	return finalURL, nil
+}
+
+// IsNonPublicIP returns true if the given IP is private, loopback,
+// link-local, multicast, or unspecified.
+func IsNonPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+
+	if addr, ok := netip.AddrFromSlice(ip); ok && rfc6598SharedAddressSpacePrefix.Contains(addr.Unmap()) {
+		return true
+	}
+
+	return ip.IsPrivate() ||
+		ip.IsLoopback() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsUnspecified()
 }

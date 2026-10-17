@@ -5,6 +5,7 @@ package worker // import "miniflux.app/v2/internal/worker"
 
 import (
 	"log/slog"
+	"sync"
 	"time"
 
 	"miniflux.app/v2/internal/config"
@@ -14,20 +15,27 @@ import (
 	"miniflux.app/v2/internal/storage"
 )
 
-// worker refreshes a feed in the background.
 type worker struct {
 	id    int
 	store *storage.Storage
 }
 
-// Run wait for a job and refresh the given feed.
-func (w *worker) Run(c <-chan model.Job) {
+// Run processes feed refresh jobs from the channel until the pool is shut down.
+func (w *worker) Run(c <-chan model.Job, shutdown <-chan struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	slog.Debug("Worker started",
 		slog.Int("worker_id", w.id),
 	)
 
 	for {
-		job := <-c
+		var job model.Job
+		select {
+		case <-shutdown:
+			return
+		case job = <-c:
+		}
+
 		slog.Debug("Job received by worker",
 			slog.Int("worker_id", w.id),
 			slog.Int64("user_id", job.UserID),
@@ -39,9 +47,9 @@ func (w *worker) Run(c <-chan model.Job) {
 		localizedError := feedHandler.RefreshFeed(w.store, job.UserID, job.FeedID, false)
 
 		if config.Opts.HasMetricsCollector() {
-			status := "success"
+			status := metric.StatusSuccess
 			if localizedError != nil {
-				status = "error"
+				status = metric.StatusError
 			}
 			metric.BackgroundFeedRefreshDuration.WithLabelValues(status).Observe(time.Since(startTime).Seconds())
 		}

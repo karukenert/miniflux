@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"miniflux.app/v2/internal/locale"
 	"miniflux.app/v2/internal/model"
 )
 
@@ -71,6 +72,7 @@ type IntegrationForm struct {
 	LinkwardenEnabled                bool
 	LinkwardenURL                    string
 	LinkwardenAPIKey                 string
+	LinkwardenCollectionID           *int64
 	MatrixBotEnabled                 bool
 	MatrixBotUser                    string
 	MatrixBotPassword                string
@@ -80,6 +82,7 @@ type IntegrationForm struct {
 	AppriseURL                       string
 	AppriseServicesURL               string
 	ReadeckEnabled                   bool
+	ReadeckPushEnabled               bool
 	ReadeckURL                       string
 	ReadeckAPIKey                    string
 	ReadeckLabels                    string
@@ -103,6 +106,7 @@ type IntegrationForm struct {
 	KarakeepEnabled                  bool
 	KarakeepAPIKey                   string
 	KarakeepURL                      string
+	KarakeepTags                     string
 	RaindropEnabled                  bool
 	RaindropToken                    string
 	RaindropCollectionID             string
@@ -129,6 +133,7 @@ type IntegrationForm struct {
 	PushoverToken                    string
 	PushoverDevice                   string
 	PushoverPrefix                   string
+	ArchiveorgEnabled                bool
 }
 
 // Merge copy form values to the model.
@@ -190,6 +195,7 @@ func (i IntegrationForm) Merge(integration *model.Integration) {
 	integration.LinkwardenEnabled = i.LinkwardenEnabled
 	integration.LinkwardenURL = i.LinkwardenURL
 	integration.LinkwardenAPIKey = i.LinkwardenAPIKey
+	integration.LinkwardenCollectionID = i.LinkwardenCollectionID
 	integration.MatrixBotEnabled = i.MatrixBotEnabled
 	integration.MatrixBotUser = i.MatrixBotUser
 	integration.MatrixBotPassword = i.MatrixBotPassword
@@ -199,6 +205,7 @@ func (i IntegrationForm) Merge(integration *model.Integration) {
 	integration.AppriseServicesURL = i.AppriseServicesURL
 	integration.AppriseURL = i.AppriseURL
 	integration.ReadeckEnabled = i.ReadeckEnabled
+	integration.ReadeckPushEnabled = i.ReadeckPushEnabled
 	integration.ReadeckURL = i.ReadeckURL
 	integration.ReadeckAPIKey = i.ReadeckAPIKey
 	integration.ReadeckLabels = i.ReadeckLabels
@@ -221,6 +228,7 @@ func (i IntegrationForm) Merge(integration *model.Integration) {
 	integration.KarakeepEnabled = i.KarakeepEnabled
 	integration.KarakeepAPIKey = i.KarakeepAPIKey
 	integration.KarakeepURL = i.KarakeepURL
+	integration.KarakeepTags = i.KarakeepTags
 	integration.RaindropEnabled = i.RaindropEnabled
 	integration.RaindropToken = i.RaindropToken
 	integration.RaindropCollectionID = i.RaindropCollectionID
@@ -247,6 +255,18 @@ func (i IntegrationForm) Merge(integration *model.Integration) {
 	integration.PushoverToken = i.PushoverToken
 	integration.PushoverDevice = i.PushoverDevice
 	integration.PushoverPrefix = i.PushoverPrefix
+	integration.ArchiveorgEnabled = i.ArchiveorgEnabled
+}
+
+// ValidateGoogleReader ensures the Google Reader integration is not enabled without credentials.
+func (i IntegrationForm) ValidateGoogleReader(storedPasswordHash string) *locale.LocalizedError {
+	if !i.GoogleReaderEnabled {
+		return nil
+	}
+	if i.GoogleReaderUsername == "" || (i.GoogleReaderPassword == "" && storedPasswordHash == "") {
+		return locale.NewLocalizedError("error.googlereader_missing_required_fields")
+	}
+	return nil
 }
 
 // NewIntegrationForm returns a new IntegrationForm.
@@ -311,6 +331,7 @@ func NewIntegrationForm(r *http.Request) *IntegrationForm {
 		LinkwardenEnabled:                r.FormValue("linkwarden_enabled") == "1",
 		LinkwardenURL:                    r.FormValue("linkwarden_url"),
 		LinkwardenAPIKey:                 r.FormValue("linkwarden_api_key"),
+		LinkwardenCollectionID:           optionalInt64Field(r.FormValue("linkwarden_collection_id")),
 		MatrixBotEnabled:                 r.FormValue("matrix_bot_enabled") == "1",
 		MatrixBotUser:                    r.FormValue("matrix_bot_user"),
 		MatrixBotPassword:                r.FormValue("matrix_bot_password"),
@@ -320,6 +341,7 @@ func NewIntegrationForm(r *http.Request) *IntegrationForm {
 		AppriseURL:                       r.FormValue("apprise_url"),
 		AppriseServicesURL:               r.FormValue("apprise_services_url"),
 		ReadeckEnabled:                   r.FormValue("readeck_enabled") == "1",
+		ReadeckPushEnabled:               r.FormValue("readeck_push_enabled") == "1",
 		ReadeckURL:                       r.FormValue("readeck_url"),
 		ReadeckAPIKey:                    r.FormValue("readeck_api_key"),
 		ReadeckLabels:                    r.FormValue("readeck_labels"),
@@ -342,6 +364,7 @@ func NewIntegrationForm(r *http.Request) *IntegrationForm {
 		KarakeepEnabled:                  r.FormValue("karakeep_enabled") == "1",
 		KarakeepAPIKey:                   r.FormValue("karakeep_api_key"),
 		KarakeepURL:                      r.FormValue("karakeep_url"),
+		KarakeepTags:                     r.FormValue("karakeep_tags"),
 		RaindropEnabled:                  r.FormValue("raindrop_enabled") == "1",
 		RaindropToken:                    r.FormValue("raindrop_token"),
 		RaindropCollectionID:             r.FormValue("raindrop_collection_id"),
@@ -368,6 +391,7 @@ func NewIntegrationForm(r *http.Request) *IntegrationForm {
 		PushoverToken:                    r.FormValue("pushover_token"),
 		PushoverDevice:                   r.FormValue("pushover_device"),
 		PushoverPrefix:                   r.FormValue("pushover_prefix"),
+		ArchiveorgEnabled:                r.FormValue("archiveorg_enabled") == "1",
 	}
 }
 

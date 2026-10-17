@@ -21,12 +21,13 @@ type FeedForm struct {
 	KeeplistRules               string
 	BlockFilterEntryRules       string
 	KeepFilterEntryRules        string
-	Crawler                     bool
 	UserAgent                   string
 	Cookie                      string
 	CategoryID                  int64
 	Username                    string
 	Password                    string
+	AppriseServiceURLs          string
+	WebhookURL                  string
 	IgnoreHTTPCache             bool
 	AllowSelfSignedCertificates bool
 	FetchViaProxy               bool
@@ -34,15 +35,18 @@ type FeedForm struct {
 	NoMediaPlayer               bool
 	HideGlobally                bool
 	CategoryHidden              bool // Category has "hide_globally"
-	AppriseServiceURLs          string
-	WebhookURL                  string
-	DisableHTTP2                bool
-	NtfyEnabled                 bool
-	NtfyPriority                int
-	NtfyTopic                   string
-	PushoverEnabled             bool
-	PushoverPriority            int
-	ProxyURL                    string
+
+	NtfyEnabled  bool
+	NtfyPriority int
+	NtfyTopic    string
+
+	Crawler            bool
+	IgnoreEntryUpdates bool
+
+	DisableHTTP2     bool
+	PushoverEnabled  bool
+	PushoverPriority int
+	ProxyURL         string
 }
 
 // NewFeedForm parses the HTTP request and returns a FeedForm
@@ -77,6 +81,7 @@ func NewFeedForm(r *http.Request) *FeedForm {
 		BlockFilterEntryRules:       r.FormValue("block_filter_entry_rules"),
 		KeepFilterEntryRules:        r.FormValue("keep_filter_entry_rules"),
 		Crawler:                     r.FormValue("crawler") == "1",
+		IgnoreEntryUpdates:          r.FormValue("ignore_entry_updates") == "1",
 		CategoryID:                  int64(categoryID),
 		Username:                    r.FormValue("feed_username"),
 		Password:                    r.FormValue("feed_password"),

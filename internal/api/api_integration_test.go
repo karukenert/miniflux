@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	miniflux "miniflux.app/v2/client"
+	"miniflux.app/v2/internal/model"
 )
 
 const skipIntegrationTestsMessage = `Set TEST_MINIFLUX_* environment variables to run the API integration tests`
@@ -61,6 +62,8 @@ func (c *integrationTestConfig) genRandomUsername() string {
 }
 
 func TestIncorrectEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -78,6 +81,8 @@ func TestIncorrectEndpoint(t *testing.T) {
 }
 
 func TestHealthcheckEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -90,6 +95,8 @@ func TestHealthcheckEndpoint(t *testing.T) {
 }
 
 func TestVersionEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -131,6 +138,8 @@ func TestVersionEndpoint(t *testing.T) {
 }
 
 func TestInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -148,6 +157,8 @@ func TestInvalidCredentials(t *testing.T) {
 }
 
 func TestGetMeEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -165,6 +176,8 @@ func TestGetMeEndpoint(t *testing.T) {
 }
 
 func TestGetUsersEndpointAsAdmin(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -230,6 +243,8 @@ func TestGetUsersEndpointAsAdmin(t *testing.T) {
 }
 
 func TestGetUsersEndpointAsRegularUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -250,6 +265,8 @@ func TestGetUsersEndpointAsRegularUser(t *testing.T) {
 }
 
 func TestCreateUserEndpointAsAdmin(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -310,6 +327,8 @@ func TestCreateUserEndpointAsAdmin(t *testing.T) {
 }
 
 func TestCreateUserEndpointAsRegularUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -330,6 +349,8 @@ func TestCreateUserEndpointAsRegularUser(t *testing.T) {
 }
 
 func TestCannotCreateDuplicateUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -343,6 +364,8 @@ func TestCannotCreateDuplicateUser(t *testing.T) {
 }
 
 func TestRemoveUserEndpointAsAdmin(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -360,6 +383,8 @@ func TestRemoveUserEndpointAsAdmin(t *testing.T) {
 }
 
 func TestRemoveUserEndpointAsRegularUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -380,6 +405,8 @@ func TestRemoveUserEndpointAsRegularUser(t *testing.T) {
 }
 
 func TestGetUserByIDEndpointAsAdmin(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -454,6 +481,8 @@ func TestGetUserByIDEndpointAsAdmin(t *testing.T) {
 }
 
 func TestGetUserByIDEndpointAsRegularUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -474,6 +503,8 @@ func TestGetUserByIDEndpointAsRegularUser(t *testing.T) {
 }
 
 func TestGetUserByUsernameEndpointAsAdmin(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -544,6 +575,8 @@ func TestGetUserByUsernameEndpointAsAdmin(t *testing.T) {
 }
 
 func TestGetUserByUsernameEndpointAsRegularUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -564,6 +597,8 @@ func TestGetUserByUsernameEndpointAsRegularUser(t *testing.T) {
 }
 
 func TestUpdateUserEndpointByChangingDefaultTheme(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -579,7 +614,7 @@ func TestUpdateUserEndpointByChangingDefaultTheme(t *testing.T) {
 	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
 
 	userUpdateRequest := &miniflux.UserModificationRequest{
-		Theme: miniflux.SetOptionalField("dark_serif"),
+		Theme: new("dark_serif"),
 	}
 
 	updatedUser, err := regularUserClient.UpdateUser(regularTestUser.ID, userUpdateRequest)
@@ -593,6 +628,8 @@ func TestUpdateUserEndpointByChangingDefaultTheme(t *testing.T) {
 }
 
 func TestUpdateUserEndpointByChangingExternalFonts(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -608,7 +645,7 @@ func TestUpdateUserEndpointByChangingExternalFonts(t *testing.T) {
 	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
 
 	userUpdateRequest := &miniflux.UserModificationRequest{
-		ExternalFontHosts: miniflux.SetOptionalField("  fonts.example.org  "),
+		ExternalFontHosts: new("  fonts.example.org  "),
 	}
 
 	updatedUser, err := regularUserClient.UpdateUser(regularTestUser.ID, userUpdateRequest)
@@ -622,6 +659,8 @@ func TestUpdateUserEndpointByChangingExternalFonts(t *testing.T) {
 }
 
 func TestUpdateUserEndpointByChangingExternalFontsWithInvalidValue(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -637,7 +676,7 @@ func TestUpdateUserEndpointByChangingExternalFontsWithInvalidValue(t *testing.T)
 	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
 
 	userUpdateRequest := &miniflux.UserModificationRequest{
-		ExternalFontHosts: miniflux.SetOptionalField("'self' *"),
+		ExternalFontHosts: new("'self' *"),
 	}
 
 	if _, err := regularUserClient.UpdateUser(regularTestUser.ID, userUpdateRequest); err == nil {
@@ -646,6 +685,8 @@ func TestUpdateUserEndpointByChangingExternalFontsWithInvalidValue(t *testing.T)
 }
 
 func TestUpdateUserEndpointByChangingCustomJS(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -661,7 +702,7 @@ func TestUpdateUserEndpointByChangingCustomJS(t *testing.T) {
 	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
 
 	userUpdateRequest := &miniflux.UserModificationRequest{
-		CustomJS: miniflux.SetOptionalField("alert('Hello, World!');"),
+		CustomJS: new("alert('Hello, World!');"),
 	}
 
 	updatedUser, err := regularUserClient.UpdateUser(regularTestUser.ID, userUpdateRequest)
@@ -675,6 +716,8 @@ func TestUpdateUserEndpointByChangingCustomJS(t *testing.T) {
 }
 
 func TestUpdateUserEndpointByChangingDefaultThemeToInvalidValue(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -690,7 +733,7 @@ func TestUpdateUserEndpointByChangingDefaultThemeToInvalidValue(t *testing.T) {
 	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
 
 	userUpdateRequest := &miniflux.UserModificationRequest{
-		Theme: miniflux.SetOptionalField("invalid_theme"),
+		Theme: new("invalid_theme"),
 	}
 
 	_, err = regularUserClient.UpdateUser(regularTestUser.ID, userUpdateRequest)
@@ -700,6 +743,8 @@ func TestUpdateUserEndpointByChangingDefaultThemeToInvalidValue(t *testing.T) {
 }
 
 func TestRegularUsersCannotUpdateOtherUsers(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -720,7 +765,7 @@ func TestRegularUsersCannotUpdateOtherUsers(t *testing.T) {
 	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
 
 	userUpdateRequest := &miniflux.UserModificationRequest{
-		Theme: miniflux.SetOptionalField("dark_serif"),
+		Theme: new("dark_serif"),
 	}
 
 	_, err = regularUserClient.UpdateUser(adminUser.ID, userUpdateRequest)
@@ -730,6 +775,8 @@ func TestRegularUsersCannotUpdateOtherUsers(t *testing.T) {
 }
 
 func TestAPIKeysEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -840,6 +887,8 @@ func TestAPIKeysEndpoint(t *testing.T) {
 }
 
 func TestMarkUserAsReadEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -877,6 +926,8 @@ func TestMarkUserAsReadEndpoint(t *testing.T) {
 }
 
 func TestCannotMarkUserAsReadAsOtherUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -902,6 +953,8 @@ func TestCannotMarkUserAsReadAsOtherUser(t *testing.T) {
 }
 
 func TestCreateCategoryEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -941,6 +994,8 @@ func TestCreateCategoryEndpoint(t *testing.T) {
 }
 
 func TestCreateCategoryWithEmptyTitle(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -954,6 +1009,8 @@ func TestCreateCategoryWithEmptyTitle(t *testing.T) {
 }
 
 func TestCannotCreateDuplicatedCategory(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -980,6 +1037,8 @@ func TestCannotCreateDuplicatedCategory(t *testing.T) {
 }
 
 func TestCreateCategoryWithOptions(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1022,6 +1081,8 @@ func TestCreateCategoryWithOptions(t *testing.T) {
 }
 
 func TestUpdateCategoryEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1066,6 +1127,8 @@ func TestUpdateCategoryEndpoint(t *testing.T) {
 }
 
 func TestUpdateCategoryWithOptions(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1089,7 +1152,7 @@ func TestUpdateCategoryWithOptions(t *testing.T) {
 	}
 
 	updatedCategory, err := regularUserClient.UpdateCategoryWithOptions(newCategory.ID, &miniflux.CategoryModificationRequest{
-		Title: miniflux.SetOptionalField("new title"),
+		Title: new("new title"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1108,7 +1171,7 @@ func TestUpdateCategoryWithOptions(t *testing.T) {
 	}
 
 	updatedCategory, err = regularUserClient.UpdateCategoryWithOptions(newCategory.ID, &miniflux.CategoryModificationRequest{
-		HideGlobally: miniflux.SetOptionalField(true),
+		HideGlobally: new(true),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1127,14 +1190,14 @@ func TestUpdateCategoryWithOptions(t *testing.T) {
 	}
 
 	updatedCategory, err = regularUserClient.UpdateCategoryWithOptions(newCategory.ID, &miniflux.CategoryModificationRequest{
-		HideGlobally: miniflux.SetOptionalField(false),
+		HideGlobally: new(false),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if updatedCategory.ID != newCategory.ID {
-		t.Errorf(`Invalid categoryID, got %q`, updatedCategory.ID)
+		t.Errorf(`Invalid categoryID, got %d`, updatedCategory.ID)
 	}
 
 	if updatedCategory.Title != "new title" {
@@ -1147,6 +1210,8 @@ func TestUpdateCategoryWithOptions(t *testing.T) {
 }
 
 func TestUpdateInexistingCategory(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1159,6 +1224,8 @@ func TestUpdateInexistingCategory(t *testing.T) {
 	}
 }
 func TestDeleteCategoryEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1186,6 +1253,8 @@ func TestDeleteCategoryEndpoint(t *testing.T) {
 }
 
 func TestCannotDeleteInexistingCategory(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1199,6 +1268,8 @@ func TestCannotDeleteInexistingCategory(t *testing.T) {
 }
 
 func TestCannotDeleteCategoryOfAnotherUser(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1225,6 +1296,8 @@ func TestCannotDeleteCategoryOfAnotherUser(t *testing.T) {
 }
 
 func TestGetCategoriesEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1318,6 +1391,8 @@ func TestGetCategoriesEndpoint(t *testing.T) {
 }
 
 func TestMarkCategoryAsReadEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1362,6 +1437,8 @@ func TestMarkCategoryAsReadEndpoint(t *testing.T) {
 }
 
 func TestCreateFeedEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1395,6 +1472,8 @@ func TestCreateFeedEndpoint(t *testing.T) {
 }
 
 func TestCannotCreateDuplicatedFeed(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1429,7 +1508,59 @@ func TestCannotCreateDuplicatedFeed(t *testing.T) {
 	}
 }
 
+func TestFeedCreationWithoutCategoryReturnsBadRequest(t *testing.T) {
+	t.Parallel()
+
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+	categories, err := regularUserClient.Categories()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, category := range categories {
+		if err := regularUserClient.DeleteCategory(category.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("REST API", func(t *testing.T) {
+		_, err := regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{FeedURL: testConfig.testFeedURL})
+		if !errors.Is(err, miniflux.ErrBadRequest) {
+			t.Fatalf(`Expected a bad request error, got %v`, err)
+		}
+	})
+
+	t.Run("OPML import", func(t *testing.T) {
+		data := `<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+    <body>
+        <outline title="Test" text="Test" xmlUrl="` + testConfig.testFeedURL + `"></outline>
+    </body>
+</opml>`
+
+		err := regularUserClient.Import(io.NopCloser(bytes.NewReader([]byte(data))))
+		if !errors.Is(err, miniflux.ErrBadRequest) {
+			t.Fatalf(`Expected a bad request error, got %v`, err)
+		}
+	})
+}
+
 func TestCreateFeedWithInexistingCategory(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1456,6 +1587,8 @@ func TestCreateFeedWithInexistingCategory(t *testing.T) {
 }
 
 func TestCreateFeedWithEmptyFeedURL(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1471,6 +1604,8 @@ func TestCreateFeedWithEmptyFeedURL(t *testing.T) {
 }
 
 func TestCreateFeedWithInvalidFeedURL(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1486,6 +1621,8 @@ func TestCreateFeedWithInvalidFeedURL(t *testing.T) {
 }
 
 func TestCreateDisabledFeed(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1520,6 +1657,8 @@ func TestCreateDisabledFeed(t *testing.T) {
 }
 
 func TestCreateFeedWithDisabledHTTPCache(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1554,6 +1693,8 @@ func TestCreateFeedWithDisabledHTTPCache(t *testing.T) {
 }
 
 func TestCreateFeedWithScraperRule(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1588,6 +1729,8 @@ func TestCreateFeedWithScraperRule(t *testing.T) {
 }
 
 func TestUpdateFeedEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1611,7 +1754,7 @@ func TestUpdateFeedEndpoint(t *testing.T) {
 	}
 
 	feedUpdateRequest := &miniflux.FeedModificationRequest{
-		FeedURL: miniflux.SetOptionalField("https://example.org/feed.xml"),
+		FeedURL: new("https://example.org/feed.xml"),
 	}
 
 	updatedFeed, err := regularUserClient.UpdateFeed(feedID, feedUpdateRequest)
@@ -1625,6 +1768,8 @@ func TestUpdateFeedEndpoint(t *testing.T) {
 }
 
 func TestCannotHaveDuplicateFeedWhenUpdatingFeed(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1652,7 +1797,7 @@ func TestCannotHaveDuplicateFeedWhenUpdatingFeed(t *testing.T) {
 	}
 
 	feedUpdateRequest := &miniflux.FeedModificationRequest{
-		FeedURL: miniflux.SetOptionalField(testConfig.testFeedURL),
+		FeedURL: new(testConfig.testFeedURL),
 	}
 
 	if _, err := regularUserClient.UpdateFeed(feedID, feedUpdateRequest); err == nil {
@@ -1661,6 +1806,8 @@ func TestCannotHaveDuplicateFeedWhenUpdatingFeed(t *testing.T) {
 }
 
 func TestUpdateFeedWithInvalidCategory(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1684,7 +1831,7 @@ func TestUpdateFeedWithInvalidCategory(t *testing.T) {
 	}
 
 	feedUpdateRequest := &miniflux.FeedModificationRequest{
-		CategoryID: miniflux.SetOptionalField(int64(123456789)),
+		CategoryID: new(int64(123456789)),
 	}
 
 	if _, err := regularUserClient.UpdateFeed(feedID, feedUpdateRequest); err == nil {
@@ -1692,7 +1839,126 @@ func TestUpdateFeedWithInvalidCategory(t *testing.T) {
 	}
 }
 
+func TestCreateFeedWithInvalidRewriteRules(t *testing.T) {
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+
+	// Missing the second backslash in the search term makes this an invalid Go
+	// string literal, which the rewrite rule parser must reject.
+	_, err = regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL:      testConfig.testFeedURL,
+		RewriteRules: `replace("\d+"|"x")`,
+	})
+	if err == nil {
+		t.Fatalf(`Creating a feed with a malformed rewrite rule should raise an error`)
+	}
+}
+
+func TestUpdateFeedWithInvalidRewriteRules(t *testing.T) {
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+
+	feedID, err := regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL: testConfig.testFeedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	feedUpdateRequest := &miniflux.FeedModificationRequest{
+		RewriteRules: new(`replace("\d+"|"x")`),
+	}
+
+	if _, err := regularUserClient.UpdateFeed(feedID, feedUpdateRequest); err == nil {
+		t.Fatalf(`Updating a feed with a malformed rewrite rule should raise an error`)
+	}
+}
+
+func TestCreateFeedWithInvalidURLRewriteRules(t *testing.T) {
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+
+	// "[" is an unterminated character class and therefore an invalid regexp.
+	_, err = regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL:         testConfig.testFeedURL,
+		UrlRewriteRules: "[",
+	})
+	if err == nil {
+		t.Fatalf(`Creating a feed with an invalid URL rewrite rule should raise an error`)
+	}
+}
+
+func TestUpdateFeedWithInvalidURLRewriteRules(t *testing.T) {
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+
+	feedID, err := regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL: testConfig.testFeedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	feedUpdateRequest := &miniflux.FeedModificationRequest{
+		UrlRewriteRules: new("["),
+	}
+
+	if _, err := regularUserClient.UpdateFeed(feedID, feedUpdateRequest); err == nil {
+		t.Fatalf(`Updating a feed with an invalid URL rewrite rule should raise an error`)
+	}
+}
+
 func TestMarkFeedAsReadEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1732,6 +1998,8 @@ func TestMarkFeedAsReadEndpoint(t *testing.T) {
 }
 
 func TestFetchCountersEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1769,6 +2037,8 @@ func TestFetchCountersEndpoint(t *testing.T) {
 }
 
 func TestDeleteFeedEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1797,6 +2067,8 @@ func TestDeleteFeedEndpoint(t *testing.T) {
 }
 
 func TestRefreshAllFeedsEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1818,6 +2090,8 @@ func TestRefreshAllFeedsEndpoint(t *testing.T) {
 }
 
 func TestRefreshFeedEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1846,6 +2120,8 @@ func TestRefreshFeedEndpoint(t *testing.T) {
 }
 
 func TestGetFeedEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1891,6 +2167,8 @@ func TestGetFeedEndpoint(t *testing.T) {
 }
 
 func TestGetFeedIcon(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1949,6 +2227,8 @@ func TestGetFeedIcon(t *testing.T) {
 }
 
 func TestGetFeedIconWithInexistingFeedID(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -1961,7 +2241,77 @@ func TestGetFeedIconWithInexistingFeedID(t *testing.T) {
 	}
 }
 
+func TestGetIconWithInexistingIconID(t *testing.T) {
+	t.Parallel()
+
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	client := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+	_, err := client.Icon(123456789)
+	if !errors.Is(err, miniflux.ErrNotFound) {
+		t.Fatalf(`Fetching an inexisting icon should return a "not found" error, got %v`, err)
+	}
+}
+
+func TestGetIconByIconIDFromAnotherUser(t *testing.T) {
+	t.Parallel()
+
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	// The owner subscribes to a feed, which fetches and stores its icon.
+	ownerUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(ownerUser.ID)
+
+	ownerClient := miniflux.NewClient(testConfig.testBaseURL, ownerUser.Username, testConfig.testRegularPassword)
+
+	feedID, err := ownerClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL: testConfig.testFeedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ownerIcon, err := ownerClient.FeedIcon(feedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ownerIcon == nil {
+		t.Fatalf(`Invalid icon, got nil`)
+	}
+
+	// The owner can fetch its own icon by icon ID.
+	if _, err := ownerClient.Icon(ownerIcon.ID); err != nil {
+		t.Fatalf(`The owner should be able to fetch its own icon, got %v`, err)
+	}
+
+	// Another user without access to that feed must not be able to fetch the icon.
+	otherUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(otherUser.ID)
+
+	otherClient := miniflux.NewClient(testConfig.testBaseURL, otherUser.Username, testConfig.testRegularPassword)
+
+	if _, err := otherClient.Icon(ownerIcon.ID); !errors.Is(err, miniflux.ErrNotFound) {
+		t.Fatalf(`Fetching an icon owned by another user should return a "not found" error, got %v`, err)
+	}
+}
+
 func TestGetFeedsEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2003,6 +2353,8 @@ func TestGetFeedsEndpoint(t *testing.T) {
 }
 
 func TestGetCategoryFeedsEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2050,6 +2402,8 @@ func TestGetCategoryFeedsEndpoint(t *testing.T) {
 }
 
 func TestExportEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2084,6 +2438,8 @@ func TestExportEndpoint(t *testing.T) {
 }
 
 func TestImportEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2115,6 +2471,8 @@ func TestImportEndpoint(t *testing.T) {
 }
 
 func TestDiscoverSubscriptionsEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2140,6 +2498,8 @@ func TestDiscoverSubscriptionsEndpoint(t *testing.T) {
 }
 
 func TestDiscoverSubscriptionsWithInvalidURL(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2153,6 +2513,8 @@ func TestDiscoverSubscriptionsWithInvalidURL(t *testing.T) {
 }
 
 func TestDiscoverSubscriptionsWithNoSubscription(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2165,6 +2527,8 @@ func TestDiscoverSubscriptionsWithNoSubscription(t *testing.T) {
 }
 
 func TestGetAllFeedEntriesEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2214,6 +2578,8 @@ func TestGetAllFeedEntriesEndpoint(t *testing.T) {
 }
 
 func TestGetAllCategoryEntriesEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2269,6 +2635,8 @@ func TestGetAllCategoryEntriesEndpoint(t *testing.T) {
 }
 
 func TestGetAllEntriesEndpointWithFilter(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2316,6 +2684,23 @@ func TestGetAllEntriesEndpointWithFilter(t *testing.T) {
 		t.Fatalf(`Invalid title, got empty`)
 	}
 
+	emptyPage, err := regularUserClient.Entries(&miniflux.Filter{
+		FeedID: feedID,
+		Limit:  1,
+		Offset: feedEntries.Total,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(emptyPage.Entries) != 0 {
+		t.Fatalf(`Expected no entries beyond the final page, got %d`, len(emptyPage.Entries))
+	}
+
+	if emptyPage.Total != feedEntries.Total {
+		t.Fatalf(`Expected total %d beyond the final page, got %d`, feedEntries.Total, emptyPage.Total)
+	}
+
 	recentEntries, err := regularUserClient.Entries(&miniflux.Filter{Order: "published_at", Direction: "desc"})
 	if err != nil {
 		t.Fatal(err)
@@ -2356,6 +2741,8 @@ func TestGetAllEntriesEndpointWithFilter(t *testing.T) {
 }
 
 func TestGetGlobalEntriesEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2412,65 +2799,9 @@ func TestGetGlobalEntriesEndpoint(t *testing.T) {
 	}
 }
 
-func TestCannotGetRemovedEntries(t *testing.T) {
-	testConfig := newIntegrationTestConfig()
-	if !testConfig.isConfigured() {
-		t.Skip(skipIntegrationTestsMessage)
-	}
-
-	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
-
-	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer adminClient.DeleteUser(regularTestUser.ID)
-
-	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
-
-	feedID, err := regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
-		FeedURL: testConfig.testFeedURL,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	feedEntries, err := regularUserClient.Entries(&miniflux.Filter{FeedID: feedID})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if feedEntries.Total == 0 {
-		t.Fatalf(`Expected at least one entry, got none`)
-	}
-
-	if err := regularUserClient.UpdateEntries([]int64{feedEntries.Entries[0].ID}, miniflux.EntryStatusRemoved); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := regularUserClient.Entry(feedEntries.Entries[0].ID); err != miniflux.ErrNotFound {
-		t.Fatalf(`Expected entry to be not found, got %v`, err)
-	}
-
-	if _, err := regularUserClient.FeedEntry(feedID, feedEntries.Entries[0].ID); err != miniflux.ErrNotFound {
-		t.Fatalf(`Expected entry to be not found, got %v`, err)
-	}
-
-	if _, err := regularUserClient.CategoryEntry(feedEntries.Entries[0].Feed.Category.ID, feedEntries.Entries[0].ID); err != miniflux.ErrNotFound {
-		t.Fatalf(`Expected entry to be not found, got %v`, err)
-	}
-
-	updatedFeedEntries, err := regularUserClient.Entries(&miniflux.Filter{FeedID: feedID})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if updatedFeedEntries.Total != feedEntries.Total-1 {
-		t.Fatalf(`Expected %d entries, got %d`, feedEntries.Total-1, updatedFeedEntries.Total)
-	}
-}
-
 func TestUpdateEnclosureEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2529,6 +2860,8 @@ func TestUpdateEnclosureEndpoint(t *testing.T) {
 }
 
 func TestGetEnclosureEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2583,6 +2916,8 @@ func TestGetEnclosureEndpoint(t *testing.T) {
 }
 
 func TestGetEntryEndpoints(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2647,6 +2982,8 @@ func TestGetEntryEndpoints(t *testing.T) {
 }
 
 func TestUpdateEntryStatusEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2688,7 +3025,310 @@ func TestUpdateEntryStatusEndpoint(t *testing.T) {
 	}
 }
 
+func TestUpdateEntriesStarredEndpoint(t *testing.T) {
+	t.Parallel()
+
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+
+	feedID, err := regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL: testConfig.testFeedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := regularUserClient.FeedEntries(feedID, nil)
+	if err != nil {
+		t.Fatalf(`Failed to get entries: %v`, err)
+	}
+
+	entryID := result.Entries[0].ID
+
+	// Star the entry without changing its status.
+	if err := regularUserClient.UpdateEntriesStarred([]int64{entryID}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, err := regularUserClient.Entry(entryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !entry.Starred {
+		t.Fatalf(`Expected entry to be starred`)
+	}
+
+	if entry.Status != miniflux.EntryStatusUnread {
+		t.Fatalf(`Expected status to remain unread, got %q`, entry.Status)
+	}
+
+	// Unstar the entry.
+	if err := regularUserClient.UpdateEntriesStarred([]int64{entryID}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, err = regularUserClient.Entry(entryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if entry.Starred {
+		t.Fatalf(`Expected entry to no longer be starred`)
+	}
+}
+
+func TestGetEntryIDsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	adminClient := miniflux.NewClient(testConfig.testBaseURL, testConfig.testAdminUsername, testConfig.testAdminPassword)
+
+	regularTestUser, err := adminClient.CreateUser(testConfig.genRandomUsername(), testConfig.testRegularPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminClient.DeleteUser(regularTestUser.ID)
+
+	regularUserClient := miniflux.NewClient(testConfig.testBaseURL, regularTestUser.Username, testConfig.testRegularPassword)
+
+	boolPtr := func(b bool) *bool { return &b }
+
+	// A new user should have no entries at all.
+	result, err := regularUserClient.EntryIDs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.EntryIDs == nil {
+		t.Fatal(`Entry IDs should not be nil`)
+	}
+
+	if len(result.EntryIDs) != 0 {
+		t.Fatalf(`Expected no entry IDs for a new user, got %d`, len(result.EntryIDs))
+	}
+
+	if result.Total != 0 {
+		t.Fatalf(`Expected total to be 0 for a new user, got %d`, result.Total)
+	}
+
+	// Subscribe to a feed so there are entries.
+	feedID, err := regularUserClient.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL: testConfig.testFeedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allEntries, err := regularUserClient.FeedEntries(feedID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(allEntries.Entries) == 0 {
+		t.Fatal(`Expected feed to have entries`)
+	}
+
+	// Without filters, all entries should be returned.
+	result, err = regularUserClient.EntryIDs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.EntryIDs) != allEntries.Total {
+		t.Fatalf(`Expected %d entry IDs, got %d`, allEntries.Total, len(result.EntryIDs))
+	}
+
+	if result.Total != allEntries.Total {
+		t.Fatalf(`Expected total %d, got %d`, allEntries.Total, result.Total)
+	}
+
+	// Filter by status=unread: all entries should be unread initially.
+	unreadResult, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Status: miniflux.EntryStatusUnread})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(unreadResult.EntryIDs) != allEntries.Total {
+		t.Fatalf(`Expected %d unread entry IDs, got %d`, allEntries.Total, len(unreadResult.EntryIDs))
+	}
+
+	// Mark one entry as read and verify status filter results update.
+	firstEntryID := allEntries.Entries[0].ID
+	if err := regularUserClient.UpdateEntries([]int64{firstEntryID}, miniflux.EntryStatusRead); err != nil {
+		t.Fatal(err)
+	}
+
+	unreadResult, err = regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Status: miniflux.EntryStatusUnread})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(unreadResult.EntryIDs) != allEntries.Total-1 {
+		t.Fatalf(`Expected %d unread entry IDs after marking one as read, got %d`, allEntries.Total-1, len(unreadResult.EntryIDs))
+	}
+
+	if unreadResult.Total != allEntries.Total-1 {
+		t.Fatalf(`Expected total %d after marking one as read, got %d`, allEntries.Total-1, unreadResult.Total)
+	}
+
+	for _, id := range unreadResult.EntryIDs {
+		if id == firstEntryID {
+			t.Fatalf(`Entry ID %d should not appear in unread IDs after being marked as read`, firstEntryID)
+		}
+	}
+
+	readResult, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Status: miniflux.EntryStatusRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(readResult.EntryIDs) != 1 || readResult.EntryIDs[0] != firstEntryID {
+		t.Fatalf(`Expected only entry %d in read results, got %v`, firstEntryID, readResult.EntryIDs)
+	}
+
+	// Pagination: limit=1 should return 1 entry but total reflects the full unread count.
+	if allEntries.Total >= 2 {
+		pagedResult, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Status: miniflux.EntryStatusUnread, Limit: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(pagedResult.EntryIDs) != 1 {
+			t.Fatalf(`Expected 1 entry ID with limit=1, got %d`, len(pagedResult.EntryIDs))
+		}
+
+		if pagedResult.Total != allEntries.Total-1 {
+			t.Fatalf(`Expected total %d with limit=1, got %d`, allEntries.Total-1, pagedResult.Total)
+		}
+
+		// offset=1 should skip the first entry.
+		offsetResult, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Status: miniflux.EntryStatusUnread, Limit: 1, Offset: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(offsetResult.EntryIDs) != 1 {
+			t.Fatalf(`Expected 1 entry ID with limit=1 offset=1, got %d`, len(offsetResult.EntryIDs))
+		}
+
+		if offsetResult.EntryIDs[0] == pagedResult.EntryIDs[0] {
+			t.Fatalf(`Entry at offset=1 should differ from offset=0, both returned %d`, offsetResult.EntryIDs[0])
+		}
+	}
+
+	// Filter by starred=true: initially no starred entries.
+	starredResult, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Starred: boolPtr(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(starredResult.EntryIDs) != 0 {
+		t.Fatalf(`Expected no starred entry IDs for a new user, got %d`, len(starredResult.EntryIDs))
+	}
+
+	// Star the first entry and verify it appears in starred results.
+	if err := regularUserClient.ToggleStarred(firstEntryID); err != nil {
+		t.Fatal(err)
+	}
+
+	starredResult, err = regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Starred: boolPtr(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(starredResult.EntryIDs) != 1 {
+		t.Fatalf(`Expected 1 starred entry ID, got %d`, len(starredResult.EntryIDs))
+	}
+
+	if starredResult.Total != 1 {
+		t.Fatalf(`Expected total 1, got %d`, starredResult.Total)
+	}
+
+	if starredResult.EntryIDs[0] != firstEntryID {
+		t.Fatalf(`Expected starred entry ID %d, got %d`, firstEntryID, starredResult.EntryIDs[0])
+	}
+
+	// The read starred entry should appear when filtering by starred=true (read status does not affect it).
+	starredResult, err = regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Starred: boolPtr(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(starredResult.EntryIDs) != 1 {
+		t.Fatalf(`Expected starred entry ID to persist after marking as read, got %d result(s)`, len(starredResult.EntryIDs))
+	}
+
+	// starred=false should exclude the starred entry.
+	notStarredResult, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Starred: boolPtr(false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range notStarredResult.EntryIDs {
+		if id == firstEntryID {
+			t.Fatalf(`Starred entry %d should not appear in starred=false results`, firstEntryID)
+		}
+	}
+
+	// Pagination with offset past the single starred result should return 0 entries but total 1.
+	pagedStarred, err := regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Starred: boolPtr(true), Limit: 0, Offset: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pagedStarred.EntryIDs) != 0 {
+		t.Fatalf(`Expected 0 entry IDs with offset=1 past the only result, got %d`, len(pagedStarred.EntryIDs))
+	}
+
+	if pagedStarred.Total != 1 {
+		t.Fatalf(`Expected total 1 with offset past results, got %d`, pagedStarred.Total)
+	}
+
+	// Unstarring the entry should remove it from starred=true results.
+	if err := regularUserClient.ToggleStarred(firstEntryID); err != nil {
+		t.Fatal(err)
+	}
+
+	starredResult, err = regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Starred: boolPtr(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(starredResult.EntryIDs) != 0 {
+		t.Fatalf(`Expected no starred entry IDs after unstarring, got %d`, len(starredResult.EntryIDs))
+	}
+
+	if starredResult.Total != 0 {
+		t.Fatalf(`Expected total 0 after unstarring, got %d`, starredResult.Total)
+	}
+
+	// Invalid starred value should return 400.
+	_, err = regularUserClient.EntryIDs(&miniflux.EntryIDsFilter{Status: "maybe"})
+	if err == nil {
+		t.Fatal(`Expected error for invalid status parameter, got nil`)
+	}
+}
+
 func TestUpdateEntryEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2717,8 +3357,8 @@ func TestUpdateEntryEndpoint(t *testing.T) {
 	}
 
 	entryUpdateRequest := &miniflux.EntryModificationRequest{
-		Title:   miniflux.SetOptionalField("New title"),
-		Content: miniflux.SetOptionalField("New content"),
+		Title:   new("New title"),
+		Content: new("New content"),
 	}
 
 	updatedEntry, err := regularUserClient.UpdateEntry(result.Entries[0].ID, entryUpdateRequest)
@@ -2749,6 +3389,8 @@ func TestUpdateEntryEndpoint(t *testing.T) {
 }
 
 func TestToggleStarredEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2791,6 +3433,8 @@ func TestToggleStarredEndpoint(t *testing.T) {
 }
 
 func TestSaveEntryEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2824,6 +3468,8 @@ func TestSaveEntryEndpoint(t *testing.T) {
 }
 
 func TestFetchIntegrationsStatusEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2850,6 +3496,8 @@ func TestFetchIntegrationsStatusEndpoint(t *testing.T) {
 }
 
 func TestFetchContentEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2888,6 +3536,8 @@ func TestFetchContentEndpoint(t *testing.T) {
 }
 
 func TestFlushHistoryEndpoint(t *testing.T) {
+	t.Parallel()
+
 	testConfig := newIntegrationTestConfig()
 	if !testConfig.isConfigured() {
 		t.Skip(skipIntegrationTestsMessage)
@@ -2930,5 +3580,59 @@ func TestFlushHistoryEndpoint(t *testing.T) {
 
 	if readEntries.Total != 0 {
 		t.Fatalf(`Invalid total, got %d`, readEntries.Total)
+	}
+}
+
+func TestImportFeedEntryEndpoint(t *testing.T) {
+	t.Parallel()
+
+	testConfig := newIntegrationTestConfig()
+	if !testConfig.isConfigured() {
+		t.Skip(skipIntegrationTestsMessage)
+	}
+
+	client := miniflux.NewClient(
+		testConfig.testBaseURL,
+		testConfig.testAdminUsername,
+		testConfig.testAdminPassword,
+	)
+
+	// Create a feed
+	feedID, err := client.CreateFeed(&miniflux.FeedCreationRequest{
+		FeedURL: testConfig.testFeedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.DeleteFeed(feedID)
+
+	payload := map[string]any{
+		"title":        "Imported Entry",
+		"url":          "https://example.org/imported-entry",
+		"content":      "Hello world",
+		"external_id":  "integration-test-entry-1",
+		"status":       model.EntryStatusUnread,
+		"starred":      false,
+		"published_at": 0,
+	}
+
+	// First import
+	firstID, err := client.ImportFeedEntry(feedID, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if firstID == 0 {
+		t.Fatal("expected non-zero entry ID on first import")
+	}
+
+	// Second import (same payload)
+	secondID, err := client.ImportFeedEntry(feedID, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if secondID != firstID {
+		t.Fatalf("expected same entry ID on re-import, got %d and %d", firstID, secondID)
 	}
 }

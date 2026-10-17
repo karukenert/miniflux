@@ -9,16 +9,14 @@ import (
 
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/locale"
+	"miniflux.app/v2/internal/urllib"
 	"miniflux.app/v2/internal/validator"
 )
 
 // SubscriptionForm represents the subscription form.
 type SubscriptionForm struct {
-	URL                         string
 	CategoryID                  int64
-	Crawler                     bool
-	FetchViaProxy               bool
-	AllowSelfSignedCertificates bool
+	URL                         string
 	UserAgent                   string
 	Cookie                      string
 	Username                    string
@@ -30,8 +28,12 @@ type SubscriptionForm struct {
 	KeeplistRules               string
 	BlockFilterEntryRules       string
 	KeepFilterEntryRules        string
-	DisableHTTP2                bool
 	ProxyURL                    string
+	DisableHTTP2                bool
+	Crawler                     bool
+	IgnoreEntryUpdates          bool
+	FetchViaProxy               bool
+	AllowSelfSignedCertificates bool
 }
 
 // Validate makes sure the form values locale.are valid.
@@ -40,7 +42,7 @@ func (s *SubscriptionForm) Validate() *locale.LocalizedError {
 		return locale.NewLocalizedError("error.feed_mandatory_fields")
 	}
 
-	if !validator.IsValidURL(s.URL) {
+	if !urllib.IsAbsoluteURL(s.URL) {
 		return locale.NewLocalizedError("error.invalid_feed_url")
 	}
 
@@ -52,12 +54,28 @@ func (s *SubscriptionForm) Validate() *locale.LocalizedError {
 		return locale.NewLocalizedError("error.feed_invalid_keeplist_rule")
 	}
 
-	if !validator.IsValidRegex(s.UrlRewriteRules) {
+	if !validator.IsValidURLRewriteRules(s.UrlRewriteRules) {
 		return locale.NewLocalizedError("error.feed_invalid_urlrewrite_rule")
 	}
 
-	if s.ProxyURL != "" && !validator.IsValidURL(s.ProxyURL) {
+	if err := validator.IsValidRewriteRules(s.RewriteRules); err != nil {
+		return err
+	}
+
+	if s.ProxyURL != "" && !urllib.IsValidProxyURL(s.ProxyURL) {
 		return locale.NewLocalizedError("error.invalid_feed_proxy_url")
+	}
+
+	if s.BlockFilterEntryRules != "" {
+		if err := validator.IsValidFilterRules(s.BlockFilterEntryRules, "block"); err != nil {
+			return err
+		}
+	}
+
+	if s.KeepFilterEntryRules != "" {
+		if err := validator.IsValidFilterRules(s.KeepFilterEntryRules, "keep"); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -74,6 +92,7 @@ func NewSubscriptionForm(r *http.Request) *SubscriptionForm {
 		URL:                         r.FormValue("url"),
 		CategoryID:                  int64(categoryID),
 		Crawler:                     r.FormValue("crawler") == "1",
+		IgnoreEntryUpdates:          r.FormValue("ignore_entry_updates") == "1",
 		AllowSelfSignedCertificates: r.FormValue("allow_self_signed_certificates") == "1",
 		FetchViaProxy:               r.FormValue("fetch_via_proxy") == "1",
 		UserAgent:                   r.FormValue("user_agent"),

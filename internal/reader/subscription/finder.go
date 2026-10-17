@@ -5,7 +5,6 @@ package subscription // import "miniflux.app/v2/internal/reader/subscription"
 
 import (
 	"bytes"
-	"io"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -69,7 +68,18 @@ func (f *subscriptionFinder) FindSubscriptions(websiteURL, rssBridgeURL string, 
 		return Subscriptions{NewSubscription(responseHandler.EffectiveURL(), responseHandler.EffectiveURL(), feedFormat)}, nil
 	}
 
-	// Step 2) Check if the website URL is a YouTube channel.
+	// It's not a feed, so we have to process its HTML.
+	doc, err := parseHTMLDocument(responseHandler.ContentType(), responseBody)
+	if err != nil {
+		return nil, locale.NewLocalizedErrorWrapper(err, "error.unable_to_parse_html_document", err)
+	}
+	baseURL := getBaseURL(websiteURL, doc)
+
+	// Step 2) Find the canonical URL of the website.
+	slog.Debug("Try to find the canonical URL of the website", slog.String("website_url", websiteURL))
+	websiteURL = f.findCanonicalURL(websiteURL, baseURL, doc)
+
+	// Step 3) Check if the website URL is a YouTube channel.
 	slog.Debug("Try to detect feeds for a YouTube page", slog.String("website_url", websiteURL))
 	if subscriptions, localizedError := f.findSubscriptionsFromYouTube(websiteURL); localizedError != nil {
 		return nil, localizedError
@@ -78,19 +88,29 @@ func (f *subscriptionFinder) FindSubscriptions(websiteURL, rssBridgeURL string, 
 		return subscriptions, nil
 	}
 
-	// Step 3) Parse web page to find feeds from HTML meta tags.
+	// Step 4) Check if the website URL is a GitHub page.
+	slog.Debug("Try to detect feeds for a GitHub page", slog.String("website_url", websiteURL))
+	if subscriptions, localizedError := f.findSubscriptionsFromGitHub(websiteURL); localizedError != nil {
+		return nil, localizedError
+	} else if len(subscriptions) > 0 {
+		slog.Debug("Subscriptions found from GitHub page", slog.String("website_url", websiteURL), slog.Any("subscriptions", subscriptions))
+		return subscriptions, nil
+	}
+
+	// Step 5) Parse web page to find feeds from HTML meta tags.
 	slog.Debug("Try to detect feeds from HTML meta tags",
 		slog.String("website_url", websiteURL),
 		slog.String("content_type", responseHandler.ContentType()),
 	)
-	if subscriptions, localizedError := f.findSubscriptionsFromWebPage(websiteURL, responseHandler.ContentType(), bytes.NewReader(responseBody)); localizedError != nil {
+
+	if subscriptions, localizedError := f.findSubscriptionsFromWebPage(baseURL, doc); localizedError != nil {
 		return nil, localizedError
 	} else if len(subscriptions) > 0 {
 		slog.Debug("Subscriptions found from web page", slog.String("website_url", websiteURL), slog.Any("subscriptions", subscriptions))
 		return subscriptions, nil
 	}
 
-	// Step 4) Check if the website URL can use RSS-Bridge.
+	// Step 6) Check if the website URL can use RSS-Bridge.
 	if rssBridgeURL != "" {
 		slog.Debug("Try to detect feeds with RSS-Bridge", slog.String("website_url", websiteURL))
 		if subscriptions, localizedError := f.findSubscriptionsFromRSSBridge(websiteURL, rssBridgeURL, rssBridgeToken); localizedError != nil {
@@ -101,7 +121,7 @@ func (f *subscriptionFinder) FindSubscriptions(websiteURL, rssBridgeURL string, 
 		}
 	}
 
-	// Step 5) Check if the website has a known feed URL.
+	// Step 7) Check if the website has a known feed URL.
 	slog.Debug("Try to detect feeds from well-known URLs", slog.String("website_url", websiteURL))
 	if subscriptions, localizedError := f.findSubscriptionsFromWellKnownURLs(websiteURL); localizedError != nil {
 		return nil, localizedError
@@ -113,75 +133,77 @@ func (f *subscriptionFinder) FindSubscriptions(websiteURL, rssBridgeURL string, 
 	return nil, nil
 }
 
-func (f *subscriptionFinder) findSubscriptionsFromWebPage(websiteURL, contentType string, body io.Reader) (Subscriptions, *locale.LocalizedErrorWrapper) {
-	queries := map[string]string{
-		"link[type='application/rss+xml']":                                  parser.FormatRSS,
-		"link[type='application/atom+xml']":                                 parser.FormatAtom,
-		"link[type='application/json'], link[type='application/feed+json']": parser.FormatJSON,
-	}
-
-	htmlDocumentReader, err := encoding.NewCharsetReader(body, contentType)
-	if err != nil {
-		return nil, locale.NewLocalizedErrorWrapper(err, "error.unable_to_parse_html_document", err)
-	}
-
-	doc, err := goquery.NewDocumentFromReader(htmlDocumentReader)
-	if err != nil {
-		return nil, locale.NewLocalizedErrorWrapper(err, "error.unable_to_parse_html_document", err)
-	}
-
-	if hrefValue, exists := doc.FindMatcher(goquery.Single("head base")).Attr("href"); exists {
-		hrefValue = strings.TrimSpace(hrefValue)
-		if urllib.IsAbsoluteURL(hrefValue) {
-			websiteURL = hrefValue
-		}
-	}
-
+func (f *subscriptionFinder) findSubscriptionsFromWebPage(websiteURL string, doc *goquery.Document) (Subscriptions, *locale.LocalizedErrorWrapper) {
 	var subscriptions Subscriptions
-	subscriptionURLs := make(map[string]bool)
-	for query, kind := range queries {
-		doc.Find(query).Each(func(i int, s *goquery.Selection) {
-			subscription := new(subscription)
-			subscription.Type = kind
+	// There are 4 possible feed formats
+	subscriptionURLs := make(map[string]bool, 4)
 
-			if feedURL, exists := s.Attr("href"); exists && feedURL != "" {
-				subscription.URL, err = urllib.AbsoluteURL(websiteURL, feedURL)
-				if err != nil {
-					return
-				}
-			} else {
-				return // without an url, there can be no subscription.
+	// Single DOM walk over every <link> with a type attribute, then dispatch on
+	// the MIME type. This is better than doing a separate goquery.Find pass per
+	// type.
+	doc.Find("link[type]").Each(func(_ int, s *goquery.Selection) {
+		typeAttr, _ := s.Attr("type")
+		var feedFormat string
+		switch typeAttr {
+		case "application/rss+xml":
+			feedFormat = parser.FormatRSS
+		case "application/atom+xml":
+			feedFormat = parser.FormatAtom
+		case "application/feed+json":
+			feedFormat = parser.FormatJSON
+		case "application/json":
+			// Ignore JSON feed URLs that contain "/wp-json/" to avoid confusion
+			// with WordPress REST API endpoints.
+			if href, _ := s.Attr("href"); strings.Contains(href, "/wp-json/") {
+				return
 			}
+			feedFormat = parser.FormatJSON
+		default:
+			return
+		}
 
-			if title, exists := s.Attr("title"); exists {
-				subscription.Title = title
-			}
+		feedURL, _ := s.Attr("href")
+		if feedURL == "" {
+			return // without an url, there can be no subscription.
+		}
 
-			if subscription.Title == "" {
-				subscription.Title = subscription.URL
-			}
+		absoluteURL, err := urllib.ResolveToAbsoluteURL(websiteURL, feedURL)
+		if err != nil {
+			return
+		}
 
-			if !subscriptionURLs[subscription.URL] {
-				subscriptionURLs[subscription.URL] = true
-				subscriptions = append(subscriptions, subscription)
-			}
+		if subscriptionURLs[absoluteURL] {
+			return
+		}
+		subscriptionURLs[absoluteURL] = true
+
+		title, _ := s.Attr("title")
+		if title == "" {
+			title = absoluteURL
+		}
+
+		subscriptions = append(subscriptions, &subscription{
+			Type:  feedFormat,
+			Title: title,
+			URL:   absoluteURL,
 		})
-	}
+	})
 
 	return subscriptions, nil
 }
 
 func (f *subscriptionFinder) findSubscriptionsFromWellKnownURLs(websiteURL string) (Subscriptions, *locale.LocalizedErrorWrapper) {
-	knownURLs := map[string]string{
-		"atom.xml":     parser.FormatAtom,
-		"feed.atom":    parser.FormatAtom,
-		"feed.xml":     parser.FormatAtom,
-		"feed/":        parser.FormatAtom,
-		"index.rss":    parser.FormatRSS,
-		"index.xml":    parser.FormatRSS,
-		"rss.xml":      parser.FormatRSS,
-		"rss/":         parser.FormatRSS,
-		"rss/feed.xml": parser.FormatRSS,
+	type pair struct{ path, format string }
+	knownURLs := []pair{
+		{"atom.xml", parser.FormatAtom},
+		{"feed.atom", parser.FormatAtom},
+		{"feed.xml", parser.FormatAtom},
+		{"feed/", parser.FormatAtom},
+		{"index.rss", parser.FormatRSS},
+		{"index.xml", parser.FormatRSS},
+		{"rss.xml", parser.FormatRSS},
+		{"rss/", parser.FormatRSS},
+		{"rss/feed.xml", parser.FormatRSS},
 	}
 
 	websiteURLRoot := urllib.RootURL(websiteURL)
@@ -191,15 +213,15 @@ func (f *subscriptionFinder) findSubscriptionsFromWellKnownURLs(websiteURL strin
 	}
 
 	// Look for knownURLs in current subdirectory, such as 'example.com/blog/'.
-	websiteURL, _ = urllib.AbsoluteURL(websiteURL, "./")
+	websiteURL, _ = urllib.ResolveToAbsoluteURL(websiteURL, "./")
 	if websiteURL != websiteURLRoot {
 		baseURLs = append(baseURLs, websiteURL)
 	}
 
 	var subscriptions Subscriptions
 	for _, baseURL := range baseURLs {
-		for knownURL, kind := range knownURLs {
-			fullURL, err := urllib.AbsoluteURL(baseURL, knownURL)
+		for _, known := range knownURLs {
+			fullURL, err := urllib.ResolveToAbsoluteURL(baseURL, known.path)
 			if err != nil {
 				continue
 			}
@@ -207,9 +229,12 @@ func (f *subscriptionFinder) findSubscriptionsFromWellKnownURLs(websiteURL strin
 			// Some websites redirects unknown URLs to the home page.
 			// As result, the list of known URLs is returned to the subscription list.
 			// We don't want the user to choose between invalid feed URLs.
-			f.requestBuilder.WithoutRedirects()
+			//
+			// Probe each known URL on its own builder so disabling redirects
+			// here doesn't leak into the finder's other requests.
+			requestBuilder := f.requestBuilder.Clone().WithoutRedirects()
 
-			responseHandler := fetcher.NewResponseHandler(f.requestBuilder.ExecuteRequest(fullURL))
+			responseHandler := fetcher.NewResponseHandler(requestBuilder.ExecuteRequest(fullURL))
 			localizedError := responseHandler.LocalizedError()
 			responseHandler.Close()
 
@@ -228,7 +253,7 @@ func (f *subscriptionFinder) findSubscriptionsFromWellKnownURLs(websiteURL strin
 			}
 
 			subscriptions = append(subscriptions, &subscription{
-				Type:  kind,
+				Type:  known.format,
 				Title: fullURL,
 				URL:   fullURL,
 			})
@@ -274,6 +299,15 @@ func (f *subscriptionFinder) findSubscriptionsFromRSSBridge(websiteURL, rssBridg
 }
 
 func (f *subscriptionFinder) findSubscriptionsFromYouTube(websiteURL string) (Subscriptions, *locale.LocalizedErrorWrapper) {
+	playlistPrefixes := []struct {
+		prefix string
+		title  string
+	}{
+		{"UULF", "Videos"},
+		{"UUSH", "Short videos"},
+		{"UULV", "Live streams"},
+	}
+
 	decodedURL, err := url.Parse(websiteURL)
 	if err != nil {
 		return nil, locale.NewLocalizedErrorWrapper(err, "error.invalid_site_url", err)
@@ -283,9 +317,19 @@ func (f *subscriptionFinder) findSubscriptionsFromYouTube(websiteURL string) (Su
 		slog.Debug("YouTube feed discovery skipped: not a YouTube domain", slog.String("website_url", websiteURL))
 		return nil, nil
 	}
-	if _, channelID, found := strings.Cut(decodedURL.Path, "channel/"); found {
-		feedURL := "https://www.youtube.com/feeds/videos.xml?channel_id=" + channelID
-		return Subscriptions{NewSubscription(decodedURL.String(), feedURL, parser.FormatAtom)}, nil
+
+	if _, baseID, found := strings.Cut(decodedURL.Path, "channel/UC"); found {
+		var subscriptions Subscriptions
+
+		channelFeedURL := "https://www.youtube.com/feeds/videos.xml?channel_id=UC" + baseID
+		subscriptions = append(subscriptions, NewSubscription("Channel", channelFeedURL, parser.FormatAtom))
+
+		for _, playlist := range playlistPrefixes {
+			playlistFeedURL := "https://www.youtube.com/feeds/videos.xml?playlist_id=" + playlist.prefix + baseID
+			subscriptions = append(subscriptions, NewSubscription(playlist.title, playlistFeedURL, parser.FormatAtom))
+		}
+
+		return subscriptions, nil
 	}
 
 	if strings.HasPrefix(decodedURL.Path, "/watch") || strings.HasPrefix(decodedURL.Path, "/playlist") {
@@ -296,4 +340,96 @@ func (f *subscriptionFinder) findSubscriptionsFromYouTube(websiteURL string) (Su
 	}
 
 	return nil, nil
+}
+
+// findSubscriptionsFromGitHub builds the Atom feed URLs that GitHub exposes for
+// user/organization profiles and repositories. These feeds are not advertised
+// in the HTML of the pages, so they cannot be discovered through the usual
+// mechanisms.
+func (f *subscriptionFinder) findSubscriptionsFromGitHub(websiteURL string) (Subscriptions, *locale.LocalizedErrorWrapper) {
+	decodedURL, err := url.Parse(websiteURL)
+	if err != nil {
+		return nil, locale.NewLocalizedErrorWrapper(err, "error.invalid_site_url", err)
+	}
+
+	if decodedURL.Host != "github.com" && decodedURL.Host != "www.github.com" {
+		slog.Debug("GitHub feed discovery skipped: not a GitHub domain", slog.String("website_url", websiteURL))
+		return nil, nil
+	}
+
+	// Split the path into at most three segments to determine the kind of page.
+	// We only care about the first two, so there is no need to keep splitting.
+	path := strings.Trim(decodedURL.Path, "/")
+	if path == "" {
+		// The root page (https://github.com/) has no feed.
+		return nil, nil
+	}
+	segments := strings.SplitN(path, "/", 3)
+
+	switch len(segments) {
+	case 1:
+		// User or organization profile: https://github.com/<user>
+		// The activity feed lives at https://github.com/<user>.atom
+		user := segments[0]
+		feedURL := "https://github.com/" + user + ".atom"
+		return Subscriptions{NewSubscription(user, feedURL, parser.FormatAtom)}, nil
+	case 2:
+		// Repository: https://github.com/<owner>/<repo>
+		// GitHub exposes commits, releases and tags Atom feeds for repositories.
+		repoPath := "https://github.com/" + segments[0] + "/" + segments[1] + "/"
+		return Subscriptions{
+			NewSubscription("Commits", repoPath+"commits.atom", parser.FormatAtom),
+			NewSubscription("Releases", repoPath+"releases.atom", parser.FormatAtom),
+			NewSubscription("Tags", repoPath+"tags.atom", parser.FormatAtom),
+		}, nil
+	default:
+		// Deeper paths that don't map to a user profile or a repository (e.g.
+		// https://github.com/owner/repo/tree/branch/dir) have no dedicated feed.
+		return nil, nil
+	}
+}
+
+// findCanonicalURL extracts the canonical URL from the HTML <link rel="canonical"> tag.
+// Returns the canonical URL if found, otherwise returns the effective URL.
+func (f *subscriptionFinder) findCanonicalURL(effectiveURL, baseURL string, doc *goquery.Document) string {
+	canonicalHref, exists := doc.FindMatcher(goquery.Single("head link[rel='canonical' i]")).Attr("href")
+	if !exists {
+		return effectiveURL
+	}
+	canonicalHref = strings.TrimSpace(canonicalHref)
+	if canonicalHref == "" {
+		return effectiveURL
+	}
+
+	canonicalURL, err := urllib.ResolveToAbsoluteURL(baseURL, canonicalHref)
+	if err != nil {
+		return effectiveURL
+	}
+
+	return canonicalURL
+}
+
+// getBaseURL returns the url specified in the <base> tag, and `websiteURL` otherwise.
+func getBaseURL(websiteURL string, doc *goquery.Document) string {
+	baseURL := websiteURL
+	if hrefValue, exists := doc.FindMatcher(goquery.Single("head base")).Attr("href"); exists {
+		hrefValue = strings.TrimSpace(hrefValue)
+		if urllib.IsAbsoluteURL(hrefValue) {
+			baseURL = hrefValue
+		}
+	}
+	return baseURL
+}
+
+func parseHTMLDocument(contentType string, body []byte) (*goquery.Document, error) {
+	htmlDocumentReader, err := encoding.NewCharsetReaderFromBytes(body, contentType)
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := goquery.NewDocumentFromReader(htmlDocumentReader)
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
 }

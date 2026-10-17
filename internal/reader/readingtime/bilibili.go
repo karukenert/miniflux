@@ -5,6 +5,7 @@ package readingtime // import "miniflux.app/v2/internal/reader/readingtime"
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -42,9 +43,9 @@ func extractBilibiliVideoID(websiteURL string) (string, string, error) {
 }
 
 func fetchBilibiliWatchTime(websiteURL string) (int, error) {
-	requestBuilder := fetcher.NewRequestBuilder()
-	requestBuilder.WithTimeout(config.Opts.HTTPClientTimeout())
-	requestBuilder.WithProxyRotator(proxyrotator.ProxyRotatorInstance)
+	requestBuilder := fetcher.NewRequestBuilder().
+		WithTimeout(config.Opts.HTTPClientTimeout()).
+		WithProxyRotator(proxyrotator.ProxyRotatorInstance)
 
 	idType, videoID, extractErr := extractBilibiliVideoID(websiteURL)
 	if extractErr != nil {
@@ -75,12 +76,12 @@ func fetchBilibiliWatchTime(websiteURL string) (int, error) {
 
 	data, ok := result["data"].(map[string]any)
 	if !ok {
-		return 0, fmt.Errorf("data field not found or not an object")
+		return 0, errors.New("data field not found or not an object")
 	}
 
 	duration, ok := data["duration"].(float64)
 	if !ok {
-		return 0, fmt.Errorf("duration not found or not a number")
+		return 0, errors.New("duration not found or not a number")
 	}
 	intDuration := int(duration)
 	durationMin := intDuration / 60

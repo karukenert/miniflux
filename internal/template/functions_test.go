@@ -4,10 +4,13 @@
 package template // import "miniflux.app/v2/internal/template"
 
 import (
+	"html/template"
+	"strings"
 	"testing"
 	"time"
 
 	"miniflux.app/v2/internal/locale"
+	"miniflux.app/v2/internal/model"
 )
 
 func TestDict(t *testing.T) {
@@ -43,33 +46,74 @@ func TestDictWithInvalidMap(t *testing.T) {
 	}
 }
 
-func TestTruncateWithShortTexts(t *testing.T) {
-	scenarios := []string{"Short text", "Короткий текст"}
+func TestTruncate(t *testing.T) {
+	scenarios := []struct {
+		name     string
+		input    string
+		max      int
+		expected string
+	}{
+		{
+			name:     "short ascii",
+			input:    "Short text",
+			max:      25,
+			expected: "Short text",
+		},
+		{
+			name:     "short unicode",
+			input:    "Короткий текст",
+			max:      25,
+			expected: "Короткий текст",
+		},
+		{
+			name:     "exact ascii length",
+			input:    "Short text",
+			max:      len("Short text"),
+			expected: "Short text",
+		},
+		{
+			name:     "long ascii",
+			input:    "This is a really pretty long English text",
+			max:      25,
+			expected: "This is a really pretty l…",
+		},
+		{
+			name:     "long unicode",
+			input:    "Это реально очень длинный русский текст",
+			max:      25,
+			expected: "Это реально очень длинный…",
+		},
+	}
 
-	for _, input := range scenarios {
-		result := truncate(input, 25)
-		if result != input {
-			t.Fatalf(`Unexpected output, got %q instead of %q`, result, input)
-		}
-
-		result = truncate(input, len(input))
-		if result != input {
-			t.Fatalf(`Unexpected output, got %q instead of %q`, result, input)
-		}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			result := truncate(scenario.input, scenario.max)
+			if result != scenario.expected {
+				t.Fatalf(`Unexpected output, got %q instead of %q`, result, scenario.expected)
+			}
+		})
 	}
 }
 
-func TestTruncateWithLongTexts(t *testing.T) {
-	scenarios := map[string]string{
-		"This is a really pretty long English text": "This is a really pretty l…",
-		"Это реально очень длинный русский текст":   "Это реально очень длинный…",
+func TestTruncateInvalidMax(t *testing.T) {
+	scenarios := []struct {
+		name string
+		max  int
+	}{
+		{name: "zero", max: 0},
+		{name: "negative", max: -1},
 	}
 
-	for input, expected := range scenarios {
-		result := truncate(input, 25)
-		if result != expected {
-			t.Fatalf(`Unexpected output, got %q instead of %q`, result, expected)
-		}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("Expected panic for non-positive max")
+				}
+			}()
+
+			_ = truncate("Short text", scenario.max)
+		})
 	}
 }
 
@@ -80,6 +124,36 @@ func TestIsEmail(t *testing.T) {
 
 	if isEmail("invalid") {
 		t.Fatal(`This email is not valid and should returns false`)
+	}
+}
+
+func TestUntrustedURL(t *testing.T) {
+	scenarios := map[string]template.URL{
+		// Pass-through: schemes accepted by the sanitizer allowlist.
+		"https://example.org/article": "https://example.org/article",
+		"http://example.org/article":  "http://example.org/article",
+		"mailto:author@example.org":   "mailto:author@example.org",
+		"magnet:?xt=urn:btih:abc":     "magnet:?xt=urn:btih:abc",
+		"feed:https://example.org/":   "feed:https://example.org/",
+
+		// Rewritten to "#": schemes that enable script execution or
+		// local-resource access, plus malformed inputs.
+		"javascript:alert(1)":                      "#",
+		"JavaScript:alert(1)":                      "#",
+		"data:text/html,<script>alert(1)</script>": "#",
+		"vbscript:msgbox(1)":                       "#",
+		"file:///etc/passwd":                       "#",
+		"//evil.example.org/path":                  "#",
+		"/relative/path":                           "#",
+		"":                                         "#",
+	}
+
+	for input, expected := range scenarios {
+		t.Run(input, func(t *testing.T) {
+			if actual := untrustedURL(input); actual != expected {
+				t.Errorf("untrustedURL(%q) = %q, want %q", input, actual, expected)
+			}
+		})
 	}
 }
 
@@ -156,6 +230,133 @@ func TestFormatFileSize(t *testing.T) {
 		result := formatFileSize(scenario.input)
 		if result != scenario.expected {
 			t.Errorf(`Unexpected result, got %q instead of %q for %d`, result, scenario.expected, scenario.input)
+		}
+	}
+}
+
+func TestQueryString(t *testing.T) {
+	params, err := dict("q", "ai", "unread", true, "offset", 20)
+	if err != nil {
+		t.Fatalf(`The dict should be valid: %v`, err)
+	}
+
+	got := (&funcMap{}).Map()["queryString"].(func(map[string]any) string)(params)
+	if got == "" {
+		t.Fatalf("Expected a query string, got an empty string")
+	}
+
+	if !strings.HasPrefix(got, "?") {
+		t.Fatalf(`Expected query string to start with "?", got %q`, got)
+	}
+
+	if !strings.Contains(got, "q=ai") {
+		t.Fatalf(`Expected query string to contain q=ai, got %q`, got)
+	}
+
+	if !strings.Contains(got, "unread=1") {
+		t.Fatalf(`Expected query string to contain unread=1, got %q`, got)
+	}
+
+	if !strings.Contains(got, "offset=20") {
+		t.Fatalf(`Expected query string to contain offset=20, got %q`, got)
+	}
+
+	empty, err := dict("q", "", "unread", false, "offset", 0)
+	if err != nil {
+		t.Fatalf(`The dict should be valid: %v`, err)
+	}
+
+	got = (&funcMap{}).Map()["queryString"].(func(map[string]any) string)(empty)
+	if got != "" {
+		t.Fatalf(`Expected empty query string, got %q`, got)
+	}
+}
+
+func TestCSPExternalFont(t *testing.T) {
+	want := []string{
+		`default-src 'none';`,
+		`img-src * data:;`,
+		`media-src *;`,
+		`frame-src *;`,
+		`style-src 'nonce-1234';`,
+		`script-src 'nonce-1234'`,
+		`'strict-dynamic';`,
+		`font-src test.com;`,
+		`require-trusted-types-for 'script';`,
+		`trusted-types html url;`,
+		`manifest-src 'self';`,
+	}
+	got := csp(&model.User{ExternalFontHosts: "test.com"}, "1234")
+
+	for _, value := range want {
+		if !strings.Contains(got, value) {
+			t.Errorf(`Unexpected result, didn't find %q in %q`, value, got)
+		}
+	}
+}
+
+func TestCSPNoUser(t *testing.T) {
+	want := []string{
+		`default-src 'none';`,
+		`img-src * data:;`,
+		`media-src *;`,
+		`frame-src *;`,
+		`style-src 'nonce-1234';`,
+		`script-src 'nonce-1234'`,
+		`'strict-dynamic';`,
+		`require-trusted-types-for 'script';`,
+		`trusted-types html url;`,
+		`manifest-src 'self';`,
+	}
+	got := csp(nil, "1234")
+
+	for _, value := range want {
+		if !strings.Contains(got, value) {
+			t.Errorf(`Unexpected result, didn't find %q in %q`, value, got)
+		}
+	}
+}
+
+func TestCSPCustomJSExternalFont(t *testing.T) {
+	want := []string{
+		`default-src 'none';`,
+		`img-src * data:;`,
+		`media-src *;`,
+		`frame-src *;`,
+		`style-src 'nonce-1234';`,
+		`script-src 'nonce-1234'`,
+		`'strict-dynamic';`,
+		`require-trusted-types-for 'script';`,
+		`trusted-types html url;`,
+		`manifest-src 'self';`,
+	}
+	got := csp(&model.User{ExternalFontHosts: "test.com", CustomJS: "alert(1)"}, "1234")
+
+	for _, value := range want {
+		if !strings.Contains(got, value) {
+			t.Errorf(`Unexpected result, didn't find %q in %q`, value, got)
+		}
+	}
+}
+
+func TestCSPExternalFontStylesheet(t *testing.T) {
+	want := []string{
+		`default-src 'none';`,
+		`img-src * data:;`,
+		`media-src *;`,
+		`frame-src *;`,
+		`style-src 'nonce-1234' test.com;`,
+		`script-src 'nonce-1234'`,
+		`'strict-dynamic';`,
+		`require-trusted-types-for 'script';`,
+		`trusted-types html url;`,
+		`manifest-src 'self';`,
+	}
+	got := csp(&model.User{ExternalFontHosts: "test.com", Stylesheet: "a {color: red;}"}, "1234")
+
+	for _, value := range want {
+		if !strings.Contains(got, value) {
+			t.Errorf(`Unexpected result, didn't find %q in %q`, value, got)
 		}
 	}
 }

@@ -305,7 +305,7 @@ func TestPluralWithIndexOutOfBounds(t *testing.T) {
 
 func TestPluralWithVariousLanguageRules(t *testing.T) {
 	defaultCatalog = catalog{
-		"ar_AR": translationDict{
+		"ar_SA": translationDict{
 			plurals: map[string][]string{
 				"items": {"no items", "one item", "two items", "few items", "many items", "other items"},
 			},
@@ -329,11 +329,11 @@ func TestPluralWithVariousLanguageRules(t *testing.T) {
 		expected string
 	}{
 		// Arabic tests
-		{"ar_AR", "items", 0, "no items"},
-		{"ar_AR", "items", 1, "one item"},
-		{"ar_AR", "items", 2, "two items"},
-		{"ar_AR", "items", 5, "few items"},   // n%100 >= 3 && n%100 <= 10
-		{"ar_AR", "items", 15, "many items"}, // n%100 >= 11
+		{"ar_SA", "items", 0, "no items"},
+		{"ar_SA", "items", 1, "one item"},
+		{"ar_SA", "items", 2, "two items"},
+		{"ar_SA", "items", 5, "few items"},   // n%100 >= 3 && n%100 <= 10
+		{"ar_SA", "items", 15, "many items"}, // n%100 >= 11
 
 		// Polish tests
 		{"pl_PL", "files", 1, "one file"},
@@ -351,6 +351,62 @@ func TestPluralWithVariousLanguageRules(t *testing.T) {
 		if translation != test.expected {
 			t.Errorf(`Wrong translation for %s with n=%d, got %q instead of %q`,
 				test.language, test.n, translation, test.expected)
+		}
+	}
+}
+
+func TestPluralFormWithoutPlaceholder(t *testing.T) {
+	defaultCatalog = catalog{
+		"ar_SA": translationDict{
+			plurals: map[string][]string{
+				// The Arabic dual omits the count by design.
+				"minutes": {"%d دقيقة", "دقيقة واحدة", "دقيقتين", "%d دقائق", "%d دقيقة", "%d دقيقة"},
+			},
+		},
+	}
+
+	printer := NewPrinter("ar_SA")
+
+	if got := printer.Plural("minutes", 1, 1); got != "دقيقة واحدة" {
+		t.Errorf(`Plural form should not get an EXTRA marker, got %q`, got)
+	}
+	if got := printer.Plural("minutes", 2, 2); got != "دقيقتين" {
+		t.Errorf(`Plural form should not get an EXTRA marker, got %q`, got)
+	}
+	if got := printer.Plural("minutes", 5, 5); got != "5 دقائق" {
+		t.Errorf(`Plural form with placeholder should be formatted, got %q`, got)
+	}
+}
+
+func TestPrintfUnescapesLiteralPercentWithoutArgs(t *testing.T) {
+	defaultCatalog = catalog{
+		"en_US": translationDict{
+			singulars: map[string]string{
+				"media.completion": "Mark as read at 90%% completion",
+			},
+		},
+	}
+
+	got := NewPrinter("en_US").Printf("media.completion")
+	expected := "Mark as read at 90% completion"
+	if got != expected {
+		t.Errorf(`Escaped percent should be unescaped, got %q instead of %q`, got, expected)
+	}
+}
+
+func TestHasFormattingDirective(t *testing.T) {
+	tests := map[string]bool{
+		"دقيقتين":   false,
+		"%d دقيقة":  true,
+		"90%% done": false, // escaped percent consumes no argument
+		"%d of %s":  true,
+		"":          false,
+		"%":         true,
+	}
+
+	for format, expected := range tests {
+		if got := hasFormattingDirective(format); got != expected {
+			t.Errorf(`hasFormattingDirective(%q) = %v, want %v`, format, got, expected)
 		}
 	}
 }

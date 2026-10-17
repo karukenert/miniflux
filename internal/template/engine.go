@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"miniflux.app/v2/internal/locale"
-
-	"github.com/gorilla/mux"
 )
 
 //go:embed templates/common/*.html
@@ -27,10 +25,10 @@ type Engine struct {
 }
 
 // NewEngine returns a new template engine.
-func NewEngine(router *mux.Router) *Engine {
+func NewEngine(basePath string) *Engine {
 	return &Engine{
 		templates: make(map[string]*template.Template),
-		funcMap:   &funcMap{router},
+		funcMap:   &funcMap{basePath: basePath},
 	}
 }
 
@@ -97,6 +95,13 @@ func (e *Engine) Render(name string, data map[string]any) []byte {
 	if !ok {
 		panic("The template " + name + " does not exists.")
 	}
+
+	// Clone the template so the per-request, language-specific functions below
+	// are bound on a private copy. The shared template stored in e.templates is
+	// only ever cloned (never executed directly), so concurrent requests no
+	// longer race on its function map, which previously could cause a response
+	// to be rendered with another concurrent request's language.
+	tpl = template.Must(tpl.Clone())
 
 	printer := locale.NewPrinter(data["language"].(string))
 

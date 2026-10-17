@@ -3,7 +3,7 @@
 {{ define "page_header"}}
 <section class="page-header" aria-labelledby="page-header-title">
     <h1 id="page-header-title">{{ t "page.add_feed.title" }}</h1>
-    {{ template "feed_menu" }}
+    {{ template "feed_menu" dict "csrf" .csrf }}
 </section>
 {{ end }}
 
@@ -11,7 +11,7 @@
 {{ if not .categories }}
     <p role="alert" class="alert alert-error">{{ t "page.add_feed.no_category" }}</p>
 {{ else }}
-    <form action="{{ route "submitSubscription" }}" method="post" autocomplete="off">
+    <form action="{{ routePath "/subscribe" }}" method="post" autocomplete="off">
         <input type="hidden" name="csrf" value="{{ .csrf }}">
 
         {{ if .errorMessage }}
@@ -34,6 +34,7 @@
             <summary>{{ t "page.add_feed.legend.advanced_options" }}</summary>
             <div class="details-content">
                 <label><input type="checkbox" name="crawler" value="1" {{ if .form.Crawler }}checked{{ end }}> {{ t "form.feed.label.crawler" }}</label>
+                <label><input type="checkbox" name="ignore_entry_updates" value="1" {{ if .form.IgnoreEntryUpdates }}checked{{ end }}> {{ t "form.feed.label.ignore_entry_updates" }}</label>
                 <label><input type="checkbox" name="allow_self_signed_certificates" value="1" {{ if .form.AllowSelfSignedCertificates }}checked{{ end }}> {{ t "form.feed.label.allow_self_signed_certificates" }}</label>
                 <label><input type="checkbox" name="disable_http2" value="1" {{ if .form.DisableHTTP2 }}checked{{ end }}> {{ t "form.feed.label.disable_http2" }}</label>
 
@@ -68,77 +69,77 @@
                         {{ t "form.feed.label.scraper_rules" }}
                     </label>
                     &nbsp;
-                    <a href="https://miniflux.app/docs/rules.html#scraper-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href="https://miniflux.app/docs/rules.html#scraper-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.scraper_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <input type="text" name="scraper_rules" id="form-scraper-rules" value="{{ .form.ScraperRules }}" spellcheck="false">
+                <textarea name="scraper_rules" id="form-scraper-rules" class="code-input code-input-autogrow" rows="2" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">{{ .form.ScraperRules }}</textarea>
 
                 <div class="form-label-row">
                     <label for="form-rewrite-rules">
                         {{ t "form.feed.label.rewrite_rules" }}
                     </label>
                     &nbsp;
-                    <a href="https://miniflux.app/docs/rules.html#rewrite-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href="https://miniflux.app/docs/rules.html#rewrite-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.rewrite_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <input type="text" name="rewrite_rules" id="form-rewrite-rules" value="{{ .form.RewriteRules }}" spellcheck="false">
+                <textarea name="rewrite_rules" id="form-rewrite-rules" class="code-input code-input-autogrow" rows="2" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">{{ .form.RewriteRules }}</textarea>
 
                 <div class="form-label-row">
                     <label for="form-urlrewrite-rules">
                         {{ t "form.feed.label.urlrewrite_rules" }}
                     </label>
                     &nbsp;
-                    <a href=" https://miniflux.app/docs/rules.html#rewriteurl-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href=" https://miniflux.app/docs/rules.html#rewriteurl-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.urlrewrite_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <input type="text" name="urlrewrite_rules" id="form-urlrewrite-rules" value="{{ .form.UrlRewriteRules }}" spellcheck="false">
+                <textarea name="urlrewrite_rules" id="form-urlrewrite-rules" class="code-input code-input-autogrow" rows="2" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">{{ .form.UrlRewriteRules }}</textarea>
 
                 <div class="form-label-row">
                     <label for="form-blocklist-rules">
                         {{ t "form.feed.label.blocklist_rules" }}
                     </label>
                     &nbsp;
-                    <a href=" https://miniflux.app/docs/rules.html#feed-filtering-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href=" https://miniflux.app/docs/rules.html#feed-filtering-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.blocklist_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <input type="text" name="blocklist_rules" id="form-blocklist-rules" value="{{ .form.BlocklistRules }}" spellcheck="false">
+                <input type="text" name="blocklist_rules" id="form-blocklist-rules" class="code-input" value="{{ .form.BlocklistRules }}" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">
 
                 <div class="form-label-row">
                     <label for="form-keeplist-rules">
                         {{ t "form.feed.label.keeplist_rules" }}
                     </label>
                     &nbsp;
-                    <a href=" https://miniflux.app/docs/rules.html#feed-filtering-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href=" https://miniflux.app/docs/rules.html#feed-filtering-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.keeplist_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <input type="text" name="keeplist_rules" id="form-keeplist-rules" value="{{ .form.KeeplistRules }}" spellcheck="false">
+                <input type="text" name="keeplist_rules" id="form-keeplist-rules" class="code-input" value="{{ .form.KeeplistRules }}" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">
 
                 <div class="form-label-row">
                     <label for="form-block-filter-rules">
                         {{ t "form.feed.label.block_filter_entry_rules" }}
                     </label>
                     &nbsp;
-                    <a href=" https://miniflux.app/docs/rules.html#filtering-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href=" https://miniflux.app/docs/rules.html#filtering-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.block_filter_entry_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <textarea id="form-block-filter-rules" name="block_filter_entry_rules" cols="40" rows="10" spellcheck="false">{{ .form.BlockFilterEntryRules }}</textarea>
+                <textarea id="form-block-filter-rules" name="block_filter_entry_rules" class="code-input" cols="40" rows="10" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">{{ .form.BlockFilterEntryRules }}</textarea>
 
                 <div class="form-label-row">
                     <label for="form-keep-filter-rules">
                         {{ t "form.feed.label.keep_filter_entry_rules" }}
                     </label>
                     &nbsp;
-                    <a href=" https://miniflux.app/docs/rules.html#filtering-rules" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
+                    <a href=" https://miniflux.app/docs/rules.html#filtering-rules" aria-label="{{ t "action.documentation" (t "form.feed.label.keep_filter_entry_rules") }}" {{ if $.user.OpenExternalLinksInNewTab }}target="_blank"{{ end }}>
                         {{ icon "external-link" }}
                     </a>
                 </div>
-                <textarea id="form-keep-filter-rules" name="keep_filter_entry_rules" cols="40" rows="10" spellcheck="false">{{ .form.KeepFilterEntryRules }}</textarea>
+                <textarea id="form-keep-filter-rules" name="keep_filter_entry_rules" class="code-input" cols="40" rows="10" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off">{{ .form.KeepFilterEntryRules }}</textarea>
             </div>
         </details>
 

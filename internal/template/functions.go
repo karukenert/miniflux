@@ -4,41 +4,50 @@
 package template // import "miniflux.app/v2/internal/template"
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"math"
 	"net/mail"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/crypto"
-	"miniflux.app/v2/internal/http/route"
 	"miniflux.app/v2/internal/locale"
 	"miniflux.app/v2/internal/mediaproxy"
 	"miniflux.app/v2/internal/model"
+	"miniflux.app/v2/internal/reader/sanitizer"
 	"miniflux.app/v2/internal/timezone"
+	"miniflux.app/v2/internal/ui/static"
 	"miniflux.app/v2/internal/urllib"
-
-	"github.com/gorilla/mux"
 )
 
 type funcMap struct {
-	router *mux.Router
+	basePath  string
+	iconPaths map[string]string
 }
 
 // Map returns a map of template functions that are compiled during template parsing.
 func (f *funcMap) Map() template.FuncMap {
+	// Pre-compute every icon URL once, as iconPath is called a lot during pages rendering.
+	f.iconPaths = make(map[string]string, len(static.BinaryBundles))
+	for filename, bundle := range static.BinaryBundles {
+		f.iconPaths[filename] = f.basePath + "/icon/" + bundle.Checksum + "/" + filename
+	}
 	return template.FuncMap{
 		"contains":         strings.Contains,
+		"csp":              csp,
 		"startsWith":       strings.HasPrefix,
 		"formatFileSize":   formatFileSize,
 		"dict":             dict,
 		"truncate":         truncate,
 		"isEmail":          isEmail,
 		"baseURL":          config.Opts.BaseURL,
+		"apiEnabled":       config.Opts.HasAPI,
 		"rootURL":          config.Opts.RootURL,
 		"disableLocalAuth": config.Opts.DisableLocalAuth,
 		"oidcProviderName": config.Opts.OAuth2OIDCProviderName,
@@ -48,12 +57,13 @@ func (f *funcMap) Map() template.FuncMap {
 		"hasAuthProxy": func() bool {
 			return config.Opts.AuthProxyHeader() != ""
 		},
-		"route": func(name string, args ...any) string {
-			return route.Path(f.router, name, args...)
+		"routePath": func(format string, args ...any) string {
+			if len(args) > 0 {
+				return f.basePath + fmt.Sprintf(format, args...)
+			}
+			return f.basePath + format
 		},
-		"safeURL": func(url string) template.URL {
-			return template.URL(url)
-		},
+		"untrustedURL": untrustedURL,
 		"safeCSS": func(str string) template.CSS {
 			return template.CSS(str)
 		},
@@ -63,14 +73,12 @@ func (f *funcMap) Map() template.FuncMap {
 		"safeHTML": func(str string) template.HTML {
 			return template.HTML(str)
 		},
-		"proxyFilter": func(data string) string {
-			return mediaproxy.RewriteDocumentWithRelativeProxyURL(f.router, data)
-		},
+		"proxyFilter": mediaproxy.RewriteDocumentWithRelativeProxyURL,
 		"proxyURL": func(link string) string {
 			mediaProxyMode := config.Opts.MediaProxyMode()
 
 			if mediaProxyMode == "all" || (mediaProxyMode != "none" && !urllib.IsHTTPS(link)) {
-				return mediaproxy.ProxifyRelativeURL(f.router, link)
+				return mediaproxy.ProxifyRelativeURL(link)
 			}
 
 			return link
@@ -86,13 +94,8 @@ func (f *funcMap) Map() template.FuncMap {
 			return ts.Format("2006-01-02 15:04:05")
 		},
 		"theme_color": model.ThemeColor,
-		"icon": func(iconName string) template.HTML {
-			return template.HTML(fmt.Sprintf(
-				`<svg class="icon" aria-hidden="true"><use href="%s#icon-%s"/></svg>`,
-				route.Path(f.router, "appIcon", "filename", "sprite.svg"),
-				iconName,
-			))
-		},
+		"iconPath":    f.iconPath,
+		"icon":        f.iconFunc(),
 		"nonce": func() string {
 			return crypto.GenerateRandomStringHex(16)
 		},
@@ -108,6 +111,47 @@ func (f *funcMap) Map() template.FuncMap {
 		"joinStrings": func(tags []string) string {
 			return strings.Join(tags, ", ")
 		},
+		"queryString": func(params map[string]any) string {
+			if len(params) == 0 {
+				return ""
+			}
+
+			values := url.Values{}
+			for key, value := range params {
+				switch v := value.(type) {
+				case string:
+					if v != "" {
+						values.Set(key, v)
+					}
+				case int:
+					if v != 0 {
+						values.Set(key, strconv.Itoa(v))
+					}
+				case int64:
+					if v != 0 {
+						values.Set(key, strconv.FormatInt(v, 10))
+					}
+				case bool:
+					if v {
+						values.Set(key, "1")
+					}
+				default:
+					if value != nil {
+						str := fmt.Sprint(value)
+						if str != "" {
+							values.Set(key, str)
+						}
+					}
+				}
+			}
+
+			encoded := values.Encode()
+			if encoded == "" {
+				return ""
+			}
+
+			return "?" + encoded
+		},
 
 		// These functions are overridden at runtime after parsing.
 		"elapsed": func(timezone string, t time.Time) string {
@@ -122,15 +166,65 @@ func (f *funcMap) Map() template.FuncMap {
 	}
 }
 
+func (f *funcMap) iconPath(filename string) string {
+	return f.iconPaths[filename]
+}
+
+func (f *funcMap) iconFunc() func(string) template.HTML {
+	// Concatenation is used instead of fmt.Sprintf,
+	// as it's much faster, and this function is called
+	// a bunch of times per feed item on the main page.
+	prefix := `<svg class="icon" aria-hidden="true"><use href="` + f.iconPath("sprite.svg") + `#icon-`
+	const suffix = `"/></svg>`
+	return func(iconName string) template.HTML {
+		return template.HTML(prefix + iconName + suffix)
+	}
+}
+
+func csp(user *model.User, nonce string) string {
+	policies := map[string]string{
+		"default-src":               "'none'",
+		"frame-src":                 "*",
+		"img-src":                   "* data:",
+		"manifest-src":              "'self'",
+		"media-src":                 "*",
+		"require-trusted-types-for": "'script'",
+		"script-src":                "'nonce-" + nonce + "' 'strict-dynamic'",
+		"style-src":                 "'nonce-" + nonce + "'",
+		"trusted-types":             "html url",
+		"connect-src":               "'self'",
+	}
+
+	if user != nil {
+		if user.ExternalFontHosts != "" {
+			policies["font-src"] = user.ExternalFontHosts
+			if user.Stylesheet != "" {
+				policies["style-src"] += " " + user.ExternalFontHosts
+			}
+		}
+	}
+
+	var policy strings.Builder
+	policy.Grow(350)
+	for key, value := range policies {
+		policy.WriteString(key)
+		policy.WriteString(" ")
+		policy.WriteString(value)
+		policy.WriteString("; ")
+	}
+
+	return `<meta http-equiv="Content-Security-Policy" content="` + policy.String() + `">`
+}
+
 func dict(values ...any) (map[string]any, error) {
 	if len(values)%2 != 0 {
-		return nil, fmt.Errorf("dict expects an even number of arguments")
+		return nil, errors.New("dict expects an even number of arguments")
 	}
 	dict := make(map[string]any, len(values)/2)
 	for i := 0; i < len(values); i += 2 {
 		key, ok := values[i].(string)
 		if !ok {
-			return nil, fmt.Errorf("dict keys must be strings")
+			return nil, errors.New("dict keys must be strings")
 		}
 		dict[key] = values[i+1]
 	}
@@ -138,15 +232,41 @@ func dict(values ...any) (map[string]any, error) {
 }
 
 func truncate(str string, max int) string {
-	if runes := []rune(str); len(runes) > max {
-		return string(runes[:max]) + "…"
+	if max <= 0 {
+		panic("truncate: max must be greater than zero")
 	}
+
+	// Template callers pass feed titles from remote content. Scanning and
+	// allocating the entire untrusted input just to truncate it could create a
+	// denial-of-service risk, so stop as soon as we reach the requested limit.
+	runeCount := 0
+	for i := range str {
+		if runeCount == max {
+			return str[:i] + "…"
+		}
+		runeCount++
+	}
+
 	return str
 }
 
 func isEmail(str string) bool {
 	_, err := mail.ParseAddress(str)
 	return err == nil
+}
+
+// untrustedURL validates a feed-supplied URL against the sanitizer's scheme
+// allowlist before exposing it to html/template. Returns "#" for unsafe URLs
+// (e.g. javascript:, data:) so anchors render as inert links.
+//
+// Go's built-in html/template URL filter only allows http(s), mailto, and
+// relative URLs — too narrow for feeds which legitimately use schemes like
+// magnet:, feed:, webcal:, and tel:.
+func untrustedURL(rawURL string) template.URL {
+	if !sanitizer.HasValidURIScheme(rawURL) {
+		return template.URL("#")
+	}
+	return template.URL(rawURL)
 }
 
 // Returns the duration in human readable format (hours and minutes).

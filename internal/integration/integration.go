@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"miniflux.app/v2/internal/integration/apprise"
+	"miniflux.app/v2/internal/integration/archiveorg"
 	"miniflux.app/v2/internal/integration/betula"
 	"miniflux.app/v2/internal/integration/cubox"
 	"miniflux.app/v2/internal/integration/discord"
@@ -270,23 +271,26 @@ func SendEntry(entry *model.Entry, userIntegrations *model.Integration) {
 	}
 
 	if userIntegrations.LinkwardenEnabled {
-		slog.Debug("Sending entry to linkwarden",
+		attrs := []any{
 			slog.Int64("user_id", userIntegrations.UserID),
 			slog.Int64("entry_id", entry.ID),
 			slog.String("entry_url", entry.URL),
-		)
+		}
+
+		if userIntegrations.LinkwardenCollectionID != nil {
+			attrs = append(attrs, slog.Int64("collection_id", *userIntegrations.LinkwardenCollectionID))
+		}
+
+		slog.Debug("Sending entry to linkwarden", attrs...)
 
 		client := linkwarden.NewClient(
 			userIntegrations.LinkwardenURL,
 			userIntegrations.LinkwardenAPIKey,
+			userIntegrations.LinkwardenCollectionID,
 		)
 		if err := client.CreateBookmark(entry.URL, entry.Title); err != nil {
-			slog.Error("Unable to send entry to Linkwarden",
-				slog.Int64("user_id", userIntegrations.UserID),
-				slog.Int64("entry_id", entry.ID),
-				slog.String("entry_url", entry.URL),
-				slog.Any("error", err),
-			)
+			attrs = append(attrs, slog.Any("error", err))
+			slog.Error("Unable to send entry to Linkwarden", attrs...)
 		}
 	}
 
@@ -398,6 +402,23 @@ func SendEntry(entry *model.Entry, userIntegrations *model.Integration) {
 		}
 	}
 
+	if userIntegrations.ArchiveorgEnabled {
+		slog.Debug("Sending entry to archive.org",
+			slog.Int64("user_id", userIntegrations.UserID),
+			slog.Int64("entry_id", entry.ID),
+			slog.String("entry_url", entry.URL),
+		)
+
+		if err := archiveorg.NewClient().SendURL(entry.URL); err != nil {
+			slog.Error("Unable to send entry to Archive.org",
+				slog.Int64("user_id", userIntegrations.UserID),
+				slog.Int64("entry_id", entry.ID),
+				slog.String("entry_url", entry.URL),
+				slog.Any("error", err),
+			)
+		}
+	}
+
 	if userIntegrations.WebhookEnabled {
 		var webhookURL string
 		if entry.Feed != nil && entry.Feed.WebhookURL != "" {
@@ -433,7 +454,7 @@ func SendEntry(entry *model.Entry, userIntegrations *model.Integration) {
 		)
 
 		client := omnivore.NewClient(userIntegrations.OmnivoreAPIKey, userIntegrations.OmnivoreURL)
-		if err := client.SaveUrl(entry.URL); err != nil {
+		if err := client.SaveURL(entry.URL); err != nil {
 			slog.Error("Unable to send entry to Omnivore",
 				slog.Int64("user_id", userIntegrations.UserID),
 				slog.Int64("entry_id", entry.ID),
@@ -446,14 +467,20 @@ func SendEntry(entry *model.Entry, userIntegrations *model.Integration) {
 	if userIntegrations.KarakeepEnabled {
 		slog.Debug("Sending entry to Karakeep",
 			slog.Int64("user_id", userIntegrations.UserID),
+			slog.String("user_tags", userIntegrations.KarakeepTags),
 			slog.Int64("entry_id", entry.ID),
 			slog.String("entry_url", entry.URL),
 		)
 
-		client := karakeep.NewClient(userIntegrations.KarakeepAPIKey, userIntegrations.KarakeepURL)
+		client := karakeep.NewClient(
+			userIntegrations.KarakeepAPIKey,
+			userIntegrations.KarakeepURL,
+			userIntegrations.KarakeepTags,
+		)
 		if err := client.SaveURL(entry.URL); err != nil {
 			slog.Error("Unable to send entry to Karakeep",
 				slog.Int64("user_id", userIntegrations.UserID),
+				slog.String("user_tags", userIntegrations.KarakeepTags),
 				slog.Int64("entry_id", entry.ID),
 				slog.String("entry_url", entry.URL),
 				slog.Any("error", err),
@@ -506,7 +533,6 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 			)
 		}
 	}
-
 	if userIntegrations.WebhookEnabled {
 		var webhookURL string
 		if feed.WebhookURL != "" {
@@ -524,7 +550,7 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 
 		webhookClient := webhook.NewClient(webhookURL, userIntegrations.WebhookSecret)
 		if err := webhookClient.SendNewEntriesWebhookEvent(feed, entries); err != nil {
-			slog.Debug("Unable to send new entries to Webhook",
+			slog.Warn("Unable to send new entries to Webhook",
 				slog.Int64("user_id", userIntegrations.UserID),
 				slog.Int("nb_entries", len(entries)),
 				slog.Int64("feed_id", feed.ID),
@@ -623,7 +649,7 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 			slog.Int64("feed_id", feed.ID),
 		)
 
-		client := pushover.New(
+		client := pushover.NewClient(
 			userIntegrations.PushoverUser,
 			userIntegrations.PushoverToken,
 			feed.PushoverPriority,
@@ -639,30 +665,54 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 	// Integrations that only support sending individual entries
 	if userIntegrations.TelegramBotEnabled {
 		for _, entry := range entries {
-			if userIntegrations.TelegramBotEnabled {
-				slog.Debug("Sending a new entry to Telegram",
+			slog.Debug("Sending a new entry to Telegram",
+				slog.Int64("user_id", userIntegrations.UserID),
+				slog.Int64("entry_id", entry.ID),
+				slog.String("entry_url", entry.URL),
+			)
+
+			if err := telegrambot.PushEntry(
+				feed,
+				entry,
+				userIntegrations.TelegramBotToken,
+				userIntegrations.TelegramBotChatID,
+				userIntegrations.TelegramBotTopicID,
+				userIntegrations.TelegramBotDisableWebPagePreview,
+				userIntegrations.TelegramBotDisableNotification,
+				userIntegrations.TelegramBotDisableButtons,
+			); err != nil {
+				slog.Error("Unable to send entry to Telegram",
 					slog.Int64("user_id", userIntegrations.UserID),
 					slog.Int64("entry_id", entry.ID),
 					slog.String("entry_url", entry.URL),
+					slog.Any("error", err),
 				)
+			}
+		}
+	}
 
-				if err := telegrambot.PushEntry(
-					feed,
-					entry,
-					userIntegrations.TelegramBotToken,
-					userIntegrations.TelegramBotChatID,
-					userIntegrations.TelegramBotTopicID,
-					userIntegrations.TelegramBotDisableWebPagePreview,
-					userIntegrations.TelegramBotDisableNotification,
-					userIntegrations.TelegramBotDisableButtons,
-				); err != nil {
-					slog.Error("Unable to send entry to Telegram",
-						slog.Int64("user_id", userIntegrations.UserID),
-						slog.Int64("entry_id", entry.ID),
-						slog.String("entry_url", entry.URL),
-						slog.Any("error", err),
-					)
-				}
+	// Push each new entry to Readeck when push is enabled
+	if userIntegrations.ReadeckPushEnabled {
+		client := readeck.NewClient(
+			userIntegrations.ReadeckURL,
+			userIntegrations.ReadeckAPIKey,
+			userIntegrations.ReadeckLabels,
+			userIntegrations.ReadeckOnlyURL,
+		)
+		for _, entry := range entries {
+			slog.Debug("Sending a new entry to Readeck",
+				slog.Int64("user_id", userIntegrations.UserID),
+				slog.Int64("entry_id", entry.ID),
+				slog.String("entry_url", entry.URL),
+			)
+
+			if err := client.CreateBookmark(entry.URL, entry.Title, entry.Content); err != nil {
+				slog.Error("Unable to send entry to Readeck",
+					slog.Int64("user_id", userIntegrations.UserID),
+					slog.Int64("entry_id", entry.ID),
+					slog.String("entry_url", entry.URL),
+					slog.Any("error", err),
+				)
 			}
 		}
 	}
