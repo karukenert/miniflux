@@ -59,7 +59,7 @@ func (h *handler) updateEntry(w http.ResponseWriter, r *http.Request) {
 		URL:    model.OptionalString(entryForm.URL),
 		Title:  model.OptionalString(entryForm.Title),
 		Author: model.OptionalString(entryForm.Author),
-		Date:   model.OptionalField(date),
+		Date:   new(date),
 		Tags:   entryForm.Tags,
 	}
 

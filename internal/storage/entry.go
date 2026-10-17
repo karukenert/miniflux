@@ -179,6 +179,7 @@ func (s *Storage) createEntry(tx *sql.Tx, entry *model.Entry) error {
 	return nil
 }
 
+// UpdateEntry updates an entry modified by the user, including its reading progress.
 func (s *Storage) UpdateEntry(entry *model.Entry) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -190,7 +191,55 @@ func (s *Storage) UpdateEntry(entry *model.Entry) error {
 		return err
 	}
 
+	query := `UPDATE entries SET scroll_percent=$1 WHERE user_id=$2 AND id=$3`
+	if _, err := tx.Exec(query, entry.ScrollPercent, entry.UserID, entry.ID); err != nil {
+		return fmt.Errorf(`store: unable to update scroll percent of entry #%d: %v`, entry.ID, err)
+	}
+
 	return tx.Commit()
+}
+
+// SetEntryScrollPercent updates the reading progress of an entry.
+func (s *Storage) SetEntryScrollPercent(userID, entryID int64, scrollPercent float32) error {
+	query := `UPDATE entries SET scroll_percent=$1 WHERE user_id=$2 AND id=$3`
+	result, err := s.db.Exec(query, scrollPercent, userID, entryID)
+	if err != nil {
+		return fmt.Errorf(`store: unable to update scroll percent of entry #%d: %v`, entryID, err)
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf(`store: unable to update scroll percent of entry #%d: %v`, entryID, err)
+	}
+
+	if count == 0 {
+		return errors.New(`store: nothing has been updated`)
+	}
+
+	return nil
+}
+
+// RemoveEntry deletes an entry and records a tombstone so it is not re-ingested on the next feed refresh.
+// Manual feeds are never refreshed, so no tombstone is recorded for their entries and they can be added again.
+func (s *Storage) RemoveEntry(userID, entryID int64) error {
+	query := `
+		WITH deleted AS (
+			DELETE FROM entries
+			WHERE user_id=$1 AND id=$2
+			RETURNING feed_id, hash
+		)
+		INSERT INTO entry_tombstones (feed_id, hash)
+		SELECT d.feed_id, d.hash
+		FROM deleted d
+			JOIN feeds f ON (f.id = d.feed_id)
+		WHERE d.hash <> '' AND f.manual IS false
+		ON CONFLICT (feed_id, hash) DO NOTHING
+	`
+	if _, err := s.db.Exec(query, userID, entryID); err != nil {
+		return fmt.Errorf(`store: unable to remove entry #%d: %v`, entryID, err)
+	}
+
+	return nil
 }
 
 // updateEntry updates an entry when a feed is refreshed.

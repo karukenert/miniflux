@@ -372,7 +372,7 @@ func (h *handler) removeEntryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.RemoveEntry(entry.ID); err != nil {
+	if err := h.store.RemoveEntry(entry.UserID, entry.ID); err != nil {
 		response.JSONServerError(w, r, err)
 		return
 	}

@@ -1587,4 +1587,8 @@ var migrations = [...]func(tx *sql.Tx) error{
 		_, err = tx.Exec(`ALTER TABLE feeds ADD COLUMN manual bool NOT NULL DEFAULT false;`)
 		return err
 	},
+	func(tx *sql.Tx) (err error) {
+		_, err = tx.Exec(`ALTER TABLE entries ADD COLUMN scroll_percent real NOT NULL DEFAULT 0;`)
+		return err
+	},
 }

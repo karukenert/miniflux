@@ -6,6 +6,7 @@ package scraper // import "miniflux.app/v2/internal/reader/scraper"
 import (
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -215,7 +216,7 @@ func tryParseDate(input string) *time.Time {
 
 	// If nothing worked try parsing as Unix timestamp
 	if i, err := strconv.ParseInt(input, 10, 64); err == nil {
-		return model.OptionalField(time.Unix(i, 0))
+		return new(time.Unix(i, 0))
 	}
 
 	return nil

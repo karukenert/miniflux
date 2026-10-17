@@ -26,7 +26,7 @@ func (h *handler) removeEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.RemoveEntry(entry.ID); err != nil {
+	if err := h.store.RemoveEntry(entry.UserID, entry.ID); err != nil {
 		response.HTMLServerError(w, r, err)
 		return
 	}

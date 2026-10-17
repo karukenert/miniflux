@@ -47,6 +47,9 @@ type Entry struct {
 	Enclosures  EnclosureList `json:"enclosures"`
 	Feed        *Feed         `json:"feed,omitempty"`
 	Tags        []string      `json:"tags"`
+
+	// ScrollPercent is the reading progress of the entry, between 0 and 1.
+	ScrollPercent float32 `json:"scroll_percent"`
 }
 
 func NewEntry() *Entry {
